@@ -153,6 +153,29 @@ Keep pipeline logic in services, not inside FastAPI route functions. Do not rely
 
 ## 6. Build milestones
 
+### 6.1 Feature branch roadmap
+
+Each branch delivers one focused change with its related tests and documentation. Create branches as work begins, in the order below; frontend branch names do not assume a framework.
+
+| Order | Branch | Focus | Milestones |
+| --- | --- | --- | --- |
+| 1 | `feature/backend-foundation` | FastAPI setup, report submission/polling, SQLite schema and persistence, deterministic launch rules/deadlines, Docker foundation, restart recovery. Already implemented and pushed. | 1–2 |
+| 2 | `feature/model-classification` | One replaceable `ModelClient`, OpenAI/fake adapters, model configuration, structured classification and fallback, effective severity/deadline persistence, model-call timeouts and usage traces. | 3 |
+| 3 | `feature/concurrent-checks` | Injection, missing-details, and panic checks; concurrent execution; authoritative per-run check results; independent error handling and failure states. | 4 |
+| 4 | `feature/briefing-review` | Briefing generation, separate evaluation, feedback-driven revisions, three-round cap, version history, and transition to `pending_review` only when checks and quality pass. | 5 |
+| 5 | `feature/trace-costs` | Configured model pricing, per-step cost calculation, run/report totals, unknown-usage handling, and complete trace/cost API responses. | 6 — accounting |
+| 6 | `feature/director-approval` | Demo identity/session, server-side Flight Director authorization, current-version approval, flag acknowledgements, atomic approval audit, and duplicate/stale approval protection. | 6 — approval |
+| 7 | `feature/report-submission-ui` | Select the frontend stack; build the engineer form, validation messages, submission confirmation, and polling states; package the UI into Compose startup. | 7 — engineer workflow |
+| 8 | `feature/director-console` | Director report queue/detail views, verdicts/deadlines, findings, briefing versions, trace cards/costs, authenticated approval, and flag acknowledgement controls. | 7 — director workflow |
+| 9 | `feature/final-verification` | Full-workflow integration fixes, complete-app Docker/offline-test verification, final README evidence, completed tool choices, and grading/demo checks. | 8 |
+
+**Branch workflow:**
+
+- Confirm the preceding branch is merged, update `main`, and create the next branch from that updated `main`. Create future branches only when their work begins.
+- Keep commits focused within each branch. Include that feature's tests and necessary configuration/docs alongside its implementation; avoid unrelated cleanup or starting the next feature in the same branch.
+- Record trace status and reported token usage as each model stage is introduced. The accounting branch completes pricing and aggregation; observability must not wait until then. Keep partial pipeline stages explicitly unapprovable until the required checks and briefing review are implemented.
+- Update milestone checkboxes and the short README verification note as work is verified. Keep delivery evidence in `README.md`.
+
 ### Milestone 1 — Project foundation and persistence
 
 - [x] Create FastAPI backend with `uv`, `pyproject.toml`, `.env.example`, and `.gitignore`.
@@ -312,4 +335,4 @@ mission-control/
 - [ ] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
 - [ ] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
 
-**Next coding task:** Milestone 3 (replaceable model interface and validated classification), then concurrent checks and the briefing loop. Frontend selection remains deferred.
+**Next coding task:** After `feature/backend-foundation` is merged, start `feature/model-classification` for Milestone 3, then follow the branch roadmap above. Frontend selection remains deferred until `feature/report-submission-ui`.
