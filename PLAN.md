@@ -37,7 +37,7 @@
 - A separate `tests` service under the `test` profile uses a test image target with test dependencies, a temporary database, an explicit fake `ModelClient`, no live API key, and `network_mode: none`. It must not mount the application data volume or depend on the running app. Include any eventual frontend tests in the same test entry point. [Compose profiles reference](https://docs.docker.com/compose/how-tos/profiles/).
 - Docker Engine/Desktop with Compose is the host prerequisite; Python, uv, and any frontend build tools run inside images. Initial image builds may download dependencies. The test process itself must run offline once the image is built.
 
-**Target delivery commands, run from the repository root (to be verified once implemented):**
+**Delivery commands, run from the repository root (backend/test verified; frontend pending Milestone 7):**
 
 ```bash
 docker compose up --build
@@ -155,22 +155,24 @@ Keep pipeline logic in services, not inside FastAPI route functions. Do not rely
 
 ### Milestone 1 — Project foundation and persistence
 
-- [ ] Create FastAPI backend with `uv`, `pyproject.toml`, `.env.example`, and `.gitignore`.
-- [ ] Add root Dockerfile (runtime/test targets), `.dockerignore`, and Compose app/test services with persistent SQLite volume, single-worker startup, and health check. Verify the backend starts from the root Compose command; add UI assets in Milestone 7.
-- [ ] Add SQLAlchemy models (including `check_results`), SQLite initialization, session lifecycle, and foreign keys.
-- [ ] Add Pydantic input schemas and clear validation errors.
-- [ ] Implement the pure `evaluate_launch_limits()` foundation required by report creation; Milestone 2 completes its boundary coverage and severity/deadline functions.
-- [ ] Implement `POST /api/reports` returning `202`, and `GET /api/reports` / `GET /api/reports/{id}` for polling. Commit report, verdict, run, and rule trace atomically; wire background orchestration with fresh sessions, adding model stages in Milestones 3–5. Incomplete scaffolding must not publish an approvable briefing.
-- [ ] Test `202` response contract, polling status, invalid input, database isolation, restart persistence, and marking interrupted runs `failed` on restart.
+- [x] Create FastAPI backend with `uv`, `pyproject.toml`, `.env.example`, and `.gitignore`.
+- [x] Add root Dockerfile (runtime/test targets), `.dockerignore`, and Compose app/test services with persistent SQLite volume, single-worker startup, and health check. Verify the backend starts from the root Compose command; add UI assets in Milestone 7.
+- [x] Add SQLAlchemy models (including `check_results`), SQLite initialization, session lifecycle, and foreign keys.
+- [x] Add Pydantic input schemas and clear validation errors.
+- [x] Implement the pure `evaluate_launch_limits()` foundation required by report creation; Milestone 2 completes its boundary coverage and severity/deadline functions.
+- [x] Implement `POST /api/reports` returning `202`, and `GET /api/reports` / `GET /api/reports/{id}` for polling. Commit report, verdict, run, and rule trace atomically; wire background orchestration with fresh sessions, adding model stages in Milestones 3–5. Incomplete scaffolding must not publish an approvable briefing.
+- [x] Test `202` response contract, polling status, invalid input, database isolation, restart persistence, and marking interrupted runs `failed` on restart.
+
+**Implemented foundation behavior:** The current background scaffold records `failed` / `pipeline_not_implemented` after saving the report. No model calls, checks, briefing, or approval are fabricated. See [validation evidence](docs/VALIDATION.md).
 
 **Done when:** The backend starts in Docker, a submitted report survives container recreation, interrupted runs become failed, and bad inputs give useful 4xx responses.
 
 ### Milestone 2 — Deterministic launch decisions
 
-- [ ] Complete/verify pure `evaluate_launch_limits()` returning `go`/`no_go` and all violated limits, introduced in Milestone 1.
-- [ ] Implement pure `resolve_severity()` and `calculate_brief_by()` functions.
-- [ ] Store the computed verdict, violations, effective severity, and deadline.
-- [ ] Test each inclusive boundary and just-outside value, combined violations, and severity override.
+- [x] Complete/verify pure `evaluate_launch_limits()` returning `go`/`no_go` and all violated limits, introduced in Milestone 1.
+- [x] Implement pure `resolve_severity()` and `calculate_brief_by()` functions.
+- [x] Store the computed verdict and violations; immediately store high severity/deadline for limit breaches. In-limit reports retain null severity/deadline until model classification is connected in Milestone 3.
+- [x] Test each inclusive boundary and just-outside value, combined violations, and severity override.
 
 **Done when:** No model code is involved in verdict calculation and boundary tests pass.
 
@@ -180,6 +182,7 @@ Keep pipeline logic in services, not inside FastAPI route functions. Do not rely
 - [ ] Implement the OpenAI adapter and a deterministic fake adapter for tests.
 - [ ] Define and validate structured subsystem/severity responses with Pydantic.
 - [ ] Fail safely on malformed output, unrecognized enum values, and call failures.
+- [ ] Connect classification to effective severity and persist its deadline from original report creation, using the tested Milestone 2 helpers.
 - [ ] Record model usage for each completed call.
 - [ ] Select and document the exact model identifier and configured pricing before live-model acceptance. Store the actual model identifier, applicable input/output rates, and usage availability per model trace step so costs remain explainable after configuration changes. Do not invent rates or claim unknown cost is zero; expose known cost and whether the total is complete.
 
@@ -309,4 +312,4 @@ mission-control/
 - [ ] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
 - [ ] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
 
-**First coding task:** Milestone 1 (foundation + persistence), then Milestone 2 (deterministic rules). Do not start with the LLM or the frontend.
+**Next coding task:** Milestone 3 (replaceable model interface and validated classification), then concurrent checks and the briefing loop. Frontend selection remains deferred.

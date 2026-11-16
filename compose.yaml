@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      MISSION_CONTROL_DB_PATH: /data/mission_control.db
+    volumes:
+      - mission_control_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+    stop_grace_period: 15s
+
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      target: tests
+    network_mode: none
+    environment:
+      OPENAI_API_KEY: ""
+      MISSION_CONTROL_DB_PATH: /tmp/mission-control-tests.db
+
+volumes:
+  mission_control_data:
