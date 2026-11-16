@@ -42,8 +42,13 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-See [validation evidence](docs/VALIDATION.md) for results and
-[the plan](PLAN.md) for milestones. The final start command will include the browser UI
+**Verification (November 16, 2026):** 74 tests passed locally and in the network-disabled
+Docker test service without an API key (`74 passed in 2.38s` in Docker). Starting with
+`docker compose up --build --detach --wait` reached healthy status. Container recreation
+preserved saved reports and marked unfinished processing as `failed` / `interrupted`
+without changing verdicts or completed traces. Lint and formatting checks passed.
+
+See [the plan](PLAN.md) for milestones. The final start command will include the browser UI
 once the frontend stack is selected.
 
 ## API

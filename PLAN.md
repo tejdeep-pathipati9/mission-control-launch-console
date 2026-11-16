@@ -163,7 +163,7 @@ Keep pipeline logic in services, not inside FastAPI route functions. Do not rely
 - [x] Implement `POST /api/reports` returning `202`, and `GET /api/reports` / `GET /api/reports/{id}` for polling. Commit report, verdict, run, and rule trace atomically; wire background orchestration with fresh sessions, adding model stages in Milestones 3–5. Incomplete scaffolding must not publish an approvable briefing.
 - [x] Test `202` response contract, polling status, invalid input, database isolation, restart persistence, and marking interrupted runs `failed` on restart.
 
-**Implemented foundation behavior:** The current background scaffold records `failed` / `pipeline_not_implemented` after saving the report. No model calls, checks, briefing, or approval are fabricated. See [validation evidence](docs/VALIDATION.md).
+**Implemented foundation behavior:** The current background scaffold records `failed` / `pipeline_not_implemented` after saving the report. No model calls, checks, briefing, or approval are fabricated. See the [README verification note](README.md#test).
 
 **Done when:** The backend starts in Docker, a submitted report survives container recreation, interrupted runs become failed, and bad inputs give useful 4xx responses.
 
