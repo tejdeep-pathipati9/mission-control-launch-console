@@ -221,3 +221,11 @@ __marimo__/
 
 # Markdown
 ASSIGNMENT.md
+
+# Local application data and environment overrides
+data/
+*.db
+*.db-*
+*.sqlite*
+.env.*
+!.env.example
