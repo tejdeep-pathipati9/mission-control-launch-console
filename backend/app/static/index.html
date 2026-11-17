@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Report an anomaly · Mission Control</title>
   <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/common.js" defer></script>
   <script src="/assets/submission.js" defer></script>
 </head>
 <body>
@@ -15,8 +16,8 @@
   </header>
   <main id="main">
     <h1>Report an anomaly</h1>
-    <p>Submit the readings and what you observed. All fields are required.</p>
-    <noscript><p>JavaScript is needed to submit a report and follow its processing status.</p></noscript>
+    <p>Submit the readings and what you observed. All fields are required. Your report will open on a separate page.</p>
+    <noscript><p>JavaScript is needed to submit a report. Its status and briefing open on a separate page.</p></noscript>
 
     <section id="form-errors" class="notice" role="alert" tabindex="-1" hidden>
       <h2>Check your report</h2>
@@ -77,37 +78,6 @@
       </fieldset>
     </form>
 
-    <section id="report-status" class="report-status" aria-labelledby="report-heading" hidden>
-      <div class="section-heading">
-        <h2 id="report-heading" tabindex="-1">Report status</h2>
-        <button id="new-report" type="button">New report</button>
-      </div>
-      <p id="status-message" role="status" aria-live="polite"></p>
-      <p><a id="report-link" href="/">Link to this report</a></p>
-      <div id="poll-error" class="notice" role="alert" hidden>
-        <p id="poll-error-message"></p>
-        <button id="retry-status" type="button">Retry status</button>
-      </div>
-      <div id="report-result" hidden>
-        <dl class="summary">
-          <div><dt>Launch verdict</dt><dd id="verdict"></dd></div>
-          <div><dt>Severity</dt><dd id="severity"></dd></div>
-          <div><dt>Subsystem</dt><dd id="subsystem"></dd></div>
-          <div><dt>Brief by</dt><dd><time id="brief-by"></time></dd></div>
-        </dl>
-        <p>Briefing approval does not authorize launch or change the launch verdict.</p>
-        <h3>Limit violations</h3>
-        <ul id="violations"></ul>
-        <h3>Checks and review findings</h3>
-        <p id="checks-summary"></p>
-        <ul id="findings"></ul>
-        <section id="briefing" aria-labelledby="briefing-heading" hidden>
-          <h3 id="briefing-heading">Latest briefing</h3>
-          <p id="briefing-quality"></p>
-          <pre id="briefing-content"></pre>
-        </section>
-      </div>
-    </section>
   </main>
   <footer>Mission Control · Assignment demonstration</footer>
 </body>

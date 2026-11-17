@@ -2,8 +2,8 @@
 
 Meridian Launch Services anomaly-report console. The backend foundation, classification,
 concurrent note checks, briefing review, cost accounting, and human approval are implemented.
-The engineer page is implemented in plain HTML/CSS with small JavaScript scripts for submission
-and polling. The Flight Director page is the next feature. Both use the agreed white background
+The engineer form and separate report page are implemented in plain HTML/CSS, with small
+JavaScript scripts for submission and polling. The Flight Director page is the next feature. Both use the agreed white background
 and black text. This demo is not certified launch software. Briefing approval never authorizes
 a launch or changes a verdict.
 
@@ -15,12 +15,13 @@ Install and start Docker Desktop, or Docker Engine with the Compose plugin. From
 docker compose up --build
 ```
 
-Open [Mission Control](http://localhost:8000/) to submit an anomaly report and follow its status.
-The form accepts readings outside launch limits, shows field errors, and displays the saved verdict,
-violations, deadline, findings, and latest briefing. Its report link survives refresh; status polls
-every two seconds while processing and stops at a terminal state. If polling fails, **Retry status**
-fetches the saved report without submitting it again. **New report** clears the form for another
-submission. The director console and its navigation link arrive in feature 8.
+Open [Mission Control](http://localhost:8000/) to submit an anomaly report. The form accepts
+readings outside launch limits and shows field errors. After submission it navigates to
+`/reports/{id}`, a separate page showing the original readings/note, verdict, violations, deadline,
+findings, and latest briefing. This page can be reopened directly or refreshed without resubmitting.
+It polls every two seconds while processing and stops at a terminal state. If polling fails,
+**Retry status** fetches the saved report without another submission. **New report** links back
+to the input page. Existing `/?report={id}` bookmarks redirect to the new report page. The director console and its navigation link arrive in feature 8.
 
 [API documentation](http://localhost:8000/docs) remains available.
 Health is available at [GET /api/health](http://localhost:8000/api/health).
@@ -68,7 +69,7 @@ From the repository root:
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test command runs 24 JavaScript workflow checks in a build stage with networking disabled,
+The test command runs 26 JavaScript workflow checks in a build stage with networking disabled,
 then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
 runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
 serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
@@ -79,7 +80,7 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 417 Python tests and 24 JavaScript workflow checks passed
+**Verification (November 17, 2026):** 423 Python tests and 26 JavaScript workflow checks passed
 locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
@@ -103,7 +104,8 @@ the full browser workflow still needs the director page from feature 8.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
-| `GET` | `/` | Engineer form and saved-report status (`?report={id}`) |
+| `GET` | `/` | Engineer submission form; old `?report={id}` links redirect |
+| `GET` | `/reports/{id}` | Separate saved-report page with processing status and briefing |
 | `GET` | `/assets/*` | Local CSS/JavaScript files |
 | `POST` | `/api/reports` | Validate, persist the decision, schedule processing; return `202` |
 | `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |

@@ -5,13 +5,17 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const root = process.env.UI_STATIC_DIR || path.resolve(__dirname, "../../app/static");
-const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-const script = fs.readFileSync(path.join(root, "assets/submission.js"), "utf8");
+const common = fs.readFileSync(path.join(root, "assets/common.js"), "utf8");
 const names = ["engineer_name", "station", "wind_knots", "temp_c", "fuel_pct", "note"];
 const sample = { engineer_name: "Avery Chen", station: "Weather", wind_knots: "26", temp_c: "4", fuel_pct: "98", note: "Backup sensor agrees." };
 
 // In-memory DOM surface for controller tests. This is not a visual browser test.
-function harness(responses = [], search = "") {
+function harness(responses = [], pathname = "/") {
+  const page = pathname === "/" ? "index.html" : "report.html";
+  const controller = pathname === "/" ? "submission.js" : "report.js";
+  const html = fs.readFileSync(path.join(root, page), "utf8");
+  const script = fs.readFileSync(path.join(root, "assets", controller), "utf8");
+  const navigations = [];
   const elements = new Map();
   const requests = [];
   const timers = new Map();
@@ -22,6 +26,7 @@ function harness(responses = [], search = "") {
     constructor(id = "", attrs = "") {
       this.id = id;
       this.value = "";
+      this.href = attrs.match(/\bhref="([^"]+)"/)?.[1] ?? "";
       this.hidden = /\bhidden\b/.test(attrs);
       this.disabled = /\bdisabled\b/.test(attrs);
       this.validity = { badInput: false };
@@ -45,7 +50,7 @@ function harness(responses = [], search = "") {
   for (const match of html.matchAll(/<[a-z][a-z0-9]*\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
     elements.set(match[2], new Element(match[2], match[1]));
   }
-  const location = { search };
+  const location = { pathname, assign: (url) => { navigations.push(url); location.href = url; } };
   const context = {
     document: {
       querySelector: (selector) => {
@@ -58,10 +63,6 @@ function harness(responses = [], search = "") {
     },
     window: { addEventListener: (name, callback) => { windowEvents[name] = callback; } },
     location,
-    history: { replaceState: (_state, _title, url) => {
-      location.href = url;
-      location.search = new URL(url, "http://local.test").search;
-    } },
     URLSearchParams, AbortController,
     setTimeout: (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
     clearTimeout: (id) => timers.delete(id),
@@ -74,9 +75,11 @@ function harness(responses = [], search = "") {
       return { ok: (next.status || 200) < 400, status: next.status || 200, json: async () => next.data };
     },
   };
-  vm.runInNewContext(script, context);
+  vm.createContext(context);
+  vm.runInContext(common, context);
+  vm.runInContext(script, context);
   return {
-    el: (id) => elements.get(id), requests, timers, location, windowEvents,
+    el: (id) => elements.get(id), requests, timers, location, windowEvents, navigations,
     focused: () => focused,
     fill: (values = sample) => { for (const [key, value] of Object.entries(values)) elements.get(key).value = value; },
     submit: () => elements.get("report-form").events.submit({ preventDefault() {} }),
@@ -125,7 +128,7 @@ for (const [field, value] of [["wind_knots", "-0.001"], ["temp_c", "-273.15001"]
 }
 
 test("physical lower bounds are inclusive and still submit for launch evaluation", async () => {
-  const ui = harness([accepted(), reply(detail("pending_review"))]);
+  const ui = harness([accepted()]);
   ui.fill({ ...sample, wind_knots: "0", temp_c: "-273.15", fuel_pct: "0" });
   await ui.submit();
   const body = JSON.parse(ui.requests[0].options.body);
@@ -134,8 +137,8 @@ test("physical lower bounds are inclusive and still submit for launch evaluation
   assert.equal(body.fuel_pct, 0);
 });
 
-test("out-of-limit readings submit as numbers; duplicates are blocked and polling stops on readiness", async () => {
-  const ui = harness([accepted(), reply(detail()), reply(detail("pending_review"))]);
+test("successful submission navigates to a new report page and blocks duplicate POSTs", async () => {
+  const ui = harness([accepted()]);
   ui.fill({ ...sample, engineer_name: " Avery Chen ", wind_knots: "26", temp_c: "3", fuel_pct: "101" });
   const submission = ui.submit();
   await ui.submit();
@@ -145,15 +148,23 @@ test("out-of-limit readings submit as numbers; duplicates are blocked and pollin
   assert.equal(body.temp_c, 3);
   assert.equal(body.fuel_pct, 101);
   assert.equal(body.engineer_name, "Avery Chen");
-  assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 1);
+  assert.equal(ui.requests.length, 1);
   assert.equal(ui.el("report-fields").disabled, true);
-  assert.equal(ui.el("report-status").hidden, false);
+  assert.deepEqual(ui.navigations, ["/reports/7"]);
+  assert.equal(ui.el("report-status"), undefined);
+  assert.equal(ui.timers.size, 0);
+});
+
+test("the report page polls independently and stops when ready", async () => {
+  const ui = harness([reply(detail()), reply(detail("pending_review"))], "/reports/7");
+  await flush();
+  assert.equal(ui.el("report-form"), undefined);
   assert.equal(ui.el("verdict").textContent, "NO-GO");
   assert.equal(ui.el("subsystem").textContent, "Awaiting classification");
   assert.match(ui.el("brief-by").textContent, /UTC/);
-  assert.equal(ui.location.href, "/?report=7#report-status");
   await ui.poll();
   assert.match(ui.el("status-message").textContent, /Flight Director review/);
+  assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 0);
   assert.equal(ui.timers.size, 0);
 });
 
@@ -188,11 +199,10 @@ test("server submission errors use text and preserve the report", async () => {
 });
 
 test("retrying a failed status request only fetches the already-saved report", async () => {
-  const ui = harness([accepted(), new TypeError("offline"), reply(detail("failed", {
+  const ui = harness([new TypeError("offline"), reply(detail("failed", {
     current_run: { failure_message: "Processing was interrupted by an application restart." },
-  }))]);
-  ui.fill();
-  await ui.submit();
+  }))], "/reports/7");
+  await flush();
   assert.equal(ui.el("poll-error").hidden, false);
   assert.match(ui.el("poll-error-message").textContent, /saved report is unchanged/);
   assert.equal(ui.timers.size, 0);
@@ -200,54 +210,65 @@ test("retrying a failed status request only fetches the already-saved report", a
   await flush();
   assert.equal(ui.el("poll-error").hidden, true);
   assert.match(ui.el("status-message").textContent, /interrupted/);
-  assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 1);
-  assert.equal(ui.requests[2].url, "/api/reports/7");
+  assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 0);
+  assert.equal(ui.requests[1].url, "/api/reports/7");
   assert.equal(ui.timers.size, 0);
 });
 
 test("a report link resumes tracking with GET, not a second submission", async () => {
-  const ui = harness([reply(detail("pending_review"))], "?report=7");
+  const ui = harness([reply(detail("pending_review"))], "/reports/7");
   await flush();
   assert.equal(ui.requests.length, 1);
   assert.equal(ui.requests[0].url, "/api/reports/7");
   assert.equal(ui.requests[0].options.method, undefined);
-  assert.equal(ui.el("engineer_name").value, sample.engineer_name);
-  assert.equal(ui.el("report-fields").disabled, true);
+  assert.equal(ui.el("original-engineer_name").textContent, sample.engineer_name);
+  assert.equal(ui.el("report-form"), undefined);
+  assert.equal(ui.el("report-link").href, "/reports/7");
 });
 
 for (const id of ["0", "-1", "<script>", "NaN", "9007199254740993"]) {
   test(`invalid report link ${id} does not send a request`, () => {
-    const ui = harness([], `?report=${encodeURIComponent(id)}`);
+    const ui = harness([], `/reports/${id}`);
     assert.equal(ui.requests.length, 0);
-    assert.match(ui.el("error-list").textContent, /link is invalid/);
+    assert.match(ui.el("poll-error-message").textContent, /link is invalid/);
   });
 }
 
 test("a missing report stops tracking and allows starting a new form", async () => {
-  const ui = harness([{ status: 404, data: { detail: "Report not found." } }], "?report=7");
+  const ui = harness([{ status: 404, data: { detail: "Report not found." } }], "/reports/7");
   await flush();
   assert.equal(ui.el("retry-status").hidden, true);
   assert.match(ui.el("poll-error-message").textContent, /could not be found/);
   assert.doesNotMatch(ui.el("status-message").textContent, /Report saved/);
-  ui.click("new-report");
-  assert.equal(ui.el("report-fields").disabled, false);
-  assert.equal(ui.el("report-status").hidden, true);
-  assert.equal(ui.location.href, "/");
+  assert.equal(ui.el("new-report").href, "/");
+  assert.equal(ui.el("report-form"), undefined);
 });
 
-test("a stale GET cannot overwrite a fresh form after New report", async () => {
+test("leaving a report page cancels its GET and ignores late results", async () => {
   let finish;
-  const ui = harness([() => new Promise((resolve) => { finish = resolve; })], "?report=7");
-  ui.click("new-report");
+  const ui = harness([() => new Promise((resolve) => { finish = resolve; })], "/reports/7");
+  ui.windowEvents.pagehide();
+  assert.equal(ui.requests[0].options.signal.aborted, true);
   finish({ ok: true, json: async () => detail("pending_review") });
   await flush();
-  assert.equal(ui.el("report-status").hidden, true);
-  assert.equal(ui.el("engineer_name").value, "");
+  assert.equal(ui.el("report-result").hidden, true);
   assert.equal(ui.timers.size, 0);
 });
 
+test("Back to a successfully submitted form clears it without another POST", async () => {
+  const ui = harness([accepted()]);
+  ui.fill();
+  await ui.submit();
+  ui.windowEvents.pagehide();
+  ui.windowEvents.pageshow({ persisted: true });
+  assert.equal(ui.el("engineer_name").value, "");
+  assert.equal(ui.el("report-fields").disabled, false);
+  assert.equal(ui.el("form-errors").hidden, true);
+  assert.equal(ui.requests.length, 1);
+});
+
 test("returning from the back-forward cache resumes polling", async () => {
-  const ui = harness([reply(detail()), reply(detail("pending_review"))], "?report=7");
+  const ui = harness([reply(detail()), reply(detail("pending_review"))], "/reports/7");
   await flush();
   ui.windowEvents.pagehide();
   assert.equal(ui.timers.size, 0);
@@ -269,7 +290,7 @@ test("returning during an interrupted POST restores the form without resubmittin
   finish({ ok: true, json: async () => ({ report_id: 7 }) });
   await pending;
   assert.equal(ui.requests.length, 1);
-  assert.equal(ui.el("report-status").hidden, true);
+  assert.deepEqual(ui.navigations, []);
 });
 
 for (const status of ["pending_review", "approved", "failed"]) {
@@ -278,7 +299,7 @@ for (const status of ["pending_review", "approved", "failed"]) {
     const ui = harness([reply(detail(status, {
       latest_briefing: { content: untrusted, quality_passed: status !== "failed" },
       checks: [{ check_type: "injection", outcome: "flagged", reason: untrusted }],
-    }))], "?report=7");
+    }))], "/reports/7");
     await flush();
     assert.equal(ui.el("briefing-content").textContent, untrusted);
     assert.match(ui.el("findings").textContent, /<script>/);
@@ -294,7 +315,7 @@ test("an unresolved fail-safe injection flag is visible on a failed report", asy
   const ui = harness([reply(detail("failed", {
     checks: [{ check_type: "injection", outcome: "flagged", reason,
                details_json: { error_reason: "invalid_output", review_required: true } }],
-  }))], "?report=7");
+  }))], "/reports/7");
   await flush();
   assert.match(ui.el("findings").textContent, /flagged.*human review/);
   assert.match(ui.el("checks-summary").textContent, /0 of 3 checks completed; 1 could not complete/);

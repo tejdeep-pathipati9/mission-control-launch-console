@@ -22,14 +22,14 @@
 | Tests | pytest + pytest-asyncio + FastAPI TestClient/httpx | Fast, offline tests for API and pipeline behavior |
 | Package management | uv | Reproducible project setup without installing into system Python |
 | Packaging and startup | Docker + Docker Compose | One root-level command builds and starts the complete app, with persistent database storage |
-| Frontend | Plain HTML + CSS + vanilla JavaScript | Two simple pages; native forms and small scripts for API calls/polling; no framework or frontend build tool |
+| Frontend | Plain HTML + CSS + vanilla JavaScript | Small static pages; native forms and small scripts for API calls/polling; no framework or frontend build tool |
 
 **Not using for the MVP:** Django (extra full-stack framework features we do not need), PostgreSQL (additional local service), LangChain/LangGraph (unnecessary orchestration abstraction), or a background job queue (premature for the exercise). Reassess if scope expands.
 
 ### 1.1 Containerized delivery (DECIDED)
 
 - Root-level `compose.yaml`, `Dockerfile`, and `.dockerignore`; build context is the repository root; HTML/CSS/JavaScript will live in `backend/app/static/` and ship with the existing application copy.
-- The default `app` service serves `/api/*` and the browser UI on `http://localhost:8000`. FastAPI will serve the two HTML pages and their local CSS/JavaScript assets. No Node/npm runtime, React, bundler, CDN, frontend compilation, or separate frontend service is needed. A test-only Node stage executes the dependency-free JavaScript workflow checks with networking disabled; it is excluded from the runtime target. Compose must still start the complete app with the same command.
+- The default `app` service serves `/api/*` and the browser UI on `http://localhost:8000`. FastAPI serves the submission and report pages with local CSS/JavaScript assets; the director console is the remaining page. No Node/npm runtime, React, bundler, CDN, frontend compilation, or separate frontend service is needed. A test-only Node stage executes the dependency-free JavaScript workflow checks with networking disabled; it is excluded from the runtime target. Compose must still start the complete app with the same command.
 - Install Python dependencies from `backend/pyproject.toml` and `backend/uv.lock` using a frozen lockfile. The runtime working directory is `/app/backend`, so `app.main:app` resolves correctly. Keep dependency/build tooling in build stages where practical; the runtime contains the application and its installed dependencies.
 - Run one Uvicorn worker, bound to `0.0.0.0:8000`, without auto-reload. The MVP uses one app container; do not scale it while interrupted-run recovery assumes exclusive ownership of processing jobs.
 - Mount a named volume, `mission_control_data`, at `/data`; use `/data/mission_control.db` for SQLite. Ensure the runtime user can write there. Rebuilding/recreating the app or running `docker compose down` must preserve records; `down --volumes` is a deliberate data reset and is excluded from ordinary startup/shutdown instructions.
@@ -258,26 +258,27 @@ Each branch delivers one focused change with its related tests and documentation
 
 ### Milestone 7 — Frontend and final demonstration
 
-- [x] Select plain HTML/CSS with minimal vanilla JavaScript for the two-page UI.
+- [x] Select plain HTML/CSS with minimal vanilla JavaScript for the small static-page UI.
 
 **UI decision:** Plain white background, black system-font text, simple borders, readable spacing, and native form/button controls. Keep the interface responsive and keyboard accessible. Use labels and text for status rather than relying on color. No component library, dashboard theme, charts, or decorative effects.
 
-1. **Engineer page (`/`):** The report form, validation errors, submission confirmation, and processing/result status stay on one page. The saved report link currently reopens the engineer status view; add the director-console link in feature 8.
-2. **Flight Director page (`/director`):** Keep the report queue and selected-report detail on the same page. Display readings/verdict, violations, deadline, checks/flags, briefing versions, one trace card per step with tokens/cost, and explicit approval with flag acknowledgements. Put demo director access inline; no separate login page. Keep its entered token in memory and send it only on authenticated API requests.
+1. **Engineer page (`/`):** Show the input form and validation errors. A successful submission navigates to its separate report page.
+2. **Report page (`/reports/{id}`):** Display the original submission, processing/result status, readings/verdict, violations, deadline, findings, and latest briefing. Keep polling and GET-only retry here. A New report link returns to the form. Existing `/?report={id}` links redirect here; refresh does not resubmit.
+3. **Flight Director page (`/director`):** Keep the report queue and selected-report detail on the same page. Display readings/verdict, violations, deadline, checks/flags, briefing versions, one trace card per step with tokens/cost, and explicit approval with flag acknowledgements. Put demo director access inline; no separate login page. Keep its entered token in memory and send it only on authenticated API requests.
 
-Use small local JavaScript files for `fetch`, form submission, selection, and two-second polling while processing. Render untrusted report/model text as text, not executable HTML. Both pages and assets ship with the Python app; no frontend compilation or external asset downloads are required.
+Use small local JavaScript files for `fetch`, form submission, selection, and two-second polling while processing. Render untrusted report/model text as text, not executable HTML. The pages and assets ship with the Python app; no frontend compilation or external asset downloads are required.
 
-- [x] Build the engineer form with field errors, submission confirmation, saved links, and an inline status/result view.
+- [x] Build the engineer form with field errors and redirect successful submissions to a separate saved-report page.
 - [ ] Build the Flight Director report queue and selected-report detail on the second page.
 - [ ] Display verdict, violations, severity, deadline, check flags, briefing versions, trace cards, token counts, and costs.
 - [ ] Add explicit human approval interaction through the protected API.
-- [x] Engineer page polls while processing, stops at terminal states, shows failures/unavailable classification, and offers GET-only status retries. Duplicate submits and stale responses are guarded.
+- [x] The report page polls while processing, stops at terminal states, shows failures/unavailable classification, and offers GET-only status retries. Duplicate submits and stale responses are guarded.
 - [ ] Director page displays provisional costs and requires explicit flag acknowledgement before approval.
 - [x] Package the engineer HTML/CSS/JS in the existing runtime image; verify UI/assets, report-link reload, `/api`, and `/docs` coexist. The isolated production-image smoke test reached healthy status.
 - [ ] Complete the director page so the root Compose command exposes the entire browser workflow.
 - [ ] Verify the full workflow, restart persistence, and usability.
 
-**Feature 7 evidence:** 417 Python tests plus 24 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; interactive browser/layout QA is still pending because browser access was unavailable.
+**Feature 7 evidence:** 423 Python tests plus 26 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; interactive browser/layout QA is still pending because browser access was unavailable.
 
 **Done when:** All information required by the rubric can be viewed and the approval performed from the browser.
 
@@ -318,9 +319,12 @@ mission-control/
 │   │   ├── main.py
 │   │   ├── static/            # planned plain HTML/CSS/JS assets
 │   │   │   ├── index.html
+│   │   │   ├── report.html
 │   │   │   ├── director.html   # feature 8
 │   │   │   └── assets/
 │   │   │       ├── styles.css
+│   │   │       ├── common.js
+│   │   │       ├── report.js
 │   │   │       ├── submission.js
 │   │   │       └── director.js # feature 8
 │   │   ├── api/

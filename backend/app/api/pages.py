@@ -1,16 +1,15 @@
 from pathlib import Path
 
-from fastapi import APIRouter
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import FileResponse, RedirectResponse
 
 STATIC_DIRECTORY = Path(__file__).resolve().parents[1] / "static"
 router = APIRouter(include_in_schema=False)
 
 
-@router.get("/")
-def submission_page() -> FileResponse:
+def html_page(filename: str) -> FileResponse:
     return FileResponse(
-        STATIC_DIRECTORY / "index.html",
+        STATIC_DIRECTORY / filename,
         media_type="text/html",
         headers={
             "Cache-Control": "no-cache",
@@ -21,3 +20,29 @@ def submission_page() -> FileResponse:
             ),
         },
     )
+
+
+def valid_report_id(value: str | None) -> bool:
+    return bool(
+        value
+        and len(value) <= 16
+        and value.isascii()
+        and value.isdecimal()
+        and not value.startswith("0")
+        and int(value) <= 9007199254740991
+    )
+
+
+@router.get("/")
+def submission_page(request: Request) -> Response:
+    legacy_id = request.query_params.get("report")
+    if valid_report_id(legacy_id):
+        return RedirectResponse(f"/reports/{legacy_id}", status_code=307)
+    return html_page("index.html")
+
+
+@router.get("/reports/{report_id}")
+def report_page(report_id: str) -> FileResponse:
+    if not valid_report_id(report_id):
+        raise HTTPException(404, "Report page not found.")
+    return html_page("report.html")

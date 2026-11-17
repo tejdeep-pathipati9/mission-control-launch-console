@@ -21,8 +21,9 @@ class PageAssets(HTMLParser):
             self.assets.append(attrs["href"])
 
 
-def test_engineer_page_and_its_assets_ship_together_without_external_dependencies(client):
-    page = client.get("/")
+@pytest.mark.parametrize("route", ["/", "/reports/7"])
+def test_engineer_page_and_its_assets_ship_together_without_external_dependencies(client, route):
+    page = client.get(route)
     assert page.status_code == 200
     assert "text/html" in page.headers["content-type"]
     assert "script-src 'self'" in page.headers["content-security-policy"]
@@ -35,6 +36,24 @@ def test_engineer_page_and_its_assets_ship_together_without_external_dependencie
         response = client.get(asset)
         assert response.status_code == 200
         assert any(kind in response.headers["content-type"] for kind in ("css", "javascript"))
+
+
+def test_submission_and_report_are_separate_pages_and_old_links_redirect(client):
+    form = client.get("/")
+    report = client.get("/reports/7")
+    assert 'id="report-form"' in form.text
+    assert 'id="report-status"' not in form.text
+    assert 'id="report-status"' in report.text
+    assert 'id="report-form"' not in report.text
+    redirect = client.get("/?report=7", follow_redirects=False)
+    assert redirect.status_code == 307
+    assert redirect.headers["location"] == "/reports/7"
+    assert client.get("/api/reports").json() == []
+
+
+@pytest.mark.parametrize("report_id", ["0", "-1", "invalid", "9007199254740992"])
+def test_invalid_report_page_urls_are_rejected(client, report_id):
+    assert client.get(f"/reports/{report_id}").status_code == 404
 
 
 def test_ui_does_not_intercept_api_docs_or_unknown_paths(client, application):
@@ -82,7 +101,10 @@ def test_http_page_submission_and_report_link_coexist_with_async_polling(tmp_pat
         first = api.get(accepted["status_url"]).json()
         assert first["status"] in {"processing", "pending_review"}
         assert first["verdict"] == "no_go"
-        assert api.get(f"/?report={accepted['report_id']}").status_code == 200
+        report_url = f"/reports/{accepted['report_id']}"
+        assert api.get(report_url).status_code == 200
+        assert api.get("/assets/report.js").status_code == 200
+        assert api.get(report_url).status_code == 200  # Reload fetches a page, not another POST.
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             detail = api.get(accepted["status_url"]).json()
