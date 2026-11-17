@@ -4,6 +4,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
+from app.services.launch_rules import MIN_TEMPERATURE_C
+
 Severity = Literal["high", "medium", "low"]
 Status = Literal["processing", "pending_review", "approved", "failed"]
 Reading = Annotated[float, Field(strict=True, allow_inf_nan=False)]
@@ -15,9 +17,9 @@ class ReportCreate(BaseModel):
 
     engineer_name: RequiredText
     station: RequiredText
-    wind_knots: Reading
-    temp_c: Reading
-    fuel_pct: Reading
+    wind_knots: Annotated[Reading, Field(ge=0)]
+    temp_c: Annotated[Reading, Field(ge=MIN_TEMPERATURE_C)]
+    fuel_pct: Annotated[Reading, Field(ge=0)]
     note: Annotated[str, Field(min_length=1, max_length=10000)]
 
 

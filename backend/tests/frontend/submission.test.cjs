@@ -25,6 +25,7 @@ function harness(responses = [], search = "") {
       this.hidden = /\bhidden\b/.test(attrs);
       this.disabled = /\bdisabled\b/.test(attrs);
       this.validity = { badInput: false };
+      this.min = attrs.match(/\bmin="([^"]+)"/)?.[1] ?? "";
       this.attributes = {};
       this.children = [];
       this.events = {};
@@ -110,6 +111,27 @@ test("empty and whitespace fields show linked errors without creating a report",
   assert.equal(ui.el("wind_knots").attributes["aria-invalid"], "true");
   assert.equal(ui.focused(), "form-errors");
   assert.equal(ui.el("note").value, sample.note);
+});
+
+for (const [field, value] of [["wind_knots", "-0.001"], ["temp_c", "-273.15001"], ["fuel_pct", "-0.001"]]) {
+  test(`impossible ${field} is rejected without a request`, async () => {
+    const ui = harness();
+    ui.fill({ ...sample, [field]: value });
+    await ui.submit();
+    assert.equal(ui.requests.length, 0);
+    assert.equal(ui.el(field).attributes["aria-invalid"], "true");
+    assert.match(ui.el(`${field}-error`).textContent, /or higher/);
+  });
+}
+
+test("physical lower bounds are inclusive and still submit for launch evaluation", async () => {
+  const ui = harness([accepted(), reply(detail("pending_review"))]);
+  ui.fill({ ...sample, wind_knots: "0", temp_c: "-273.15", fuel_pct: "0" });
+  await ui.submit();
+  const body = JSON.parse(ui.requests[0].options.body);
+  assert.equal(body.wind_knots, 0);
+  assert.equal(body.temp_c, -273.15);
+  assert.equal(body.fuel_pct, 0);
 });
 
 test("out-of-limit readings submit as numbers; duplicates are blocked and polling stops on readiness", async () => {
@@ -266,3 +288,15 @@ for (const status of ["pending_review", "approved", "failed"]) {
     if (status === "failed") assert.match(ui.el("briefing-quality").textContent, /Draft only/);
   });
 }
+
+test("an unresolved fail-safe injection flag is visible on a failed report", async () => {
+  const reason = "Hidden-instructions check returned an invalid reply; the note requires human review.";
+  const ui = harness([reply(detail("failed", {
+    checks: [{ check_type: "injection", outcome: "flagged", reason,
+               details_json: { error_reason: "invalid_output", review_required: true } }],
+  }))], "?report=7");
+  await flush();
+  assert.match(ui.el("findings").textContent, /flagged.*human review/);
+  assert.match(ui.el("checks-summary").textContent, /0 of 3 checks completed; 1 could not complete/);
+  assert.match(ui.el("status-message").textContent, /Processing failed/);
+});

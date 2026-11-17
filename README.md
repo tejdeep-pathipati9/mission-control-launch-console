@@ -16,7 +16,7 @@ docker compose up --build
 ```
 
 Open [Mission Control](http://localhost:8000/) to submit an anomaly report and follow its status.
-The form accepts out-of-limit readings, shows field errors, and displays the saved verdict,
+The form accepts readings outside launch limits, shows field errors, and displays the saved verdict,
 violations, deadline, findings, and latest briefing. Its report link survives refresh; status polls
 every two seconds while processing and stops at a terminal state. If polling fails, **Retry status**
 fetches the saved report without submitting it again. **New report** clears the form for another
@@ -49,6 +49,10 @@ The first passing draft moves the report to `pending_review`, with no approval r
 failures produce `quality_review_exhausted`; model-call failures produce `draft_failed` or
 `evaluation_failed`. Required-check errors prevent drafting. Neither a model check nor a flagged
 finding authorizes launch.
+Malformed hidden-instruction replies become visible `flagged` results with `review_required: true`
+and an `error_reason`. They are unresolved checks: their traces fail, drafting stops, and flag
+acknowledgement cannot make them approvable. Successfully evaluated flags remain reviewable under
+the normal human-approval rules.
 
 The application uses one worker and a named volume for `/data/mission_control.db`.
 Stop it with `docker compose down`; records survive that command and container recreation.
@@ -64,7 +68,7 @@ From the repository root:
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test command runs 19 JavaScript workflow checks in a build stage with networking disabled,
+The test command runs 24 JavaScript workflow checks in a build stage with networking disabled,
 then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
 runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
 serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
@@ -75,7 +79,7 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 398 Python tests and 19 JavaScript workflow checks passed
+**Verification (November 17, 2026):** 417 Python tests and 24 JavaScript workflow checks passed
 locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
@@ -147,7 +151,10 @@ Only the report becomes `approved`; completed pipeline history, flags, costs, an
 unchanged. A NO-GO briefing can be approved and still remains NO-GO.
 
 Classification runs through report submission. A `no_go` verdict is a valid stored
-report, not a validation failure. Malformed or non-finite readings, booleans/numeric strings,
+report, not a validation failure. Input sanity minima are wind >= 0 knots, temperature >= -273.15°C,
+and fuel >= 0%; the API, pure rule function, and engineer form enforce them. No arbitrary upper
+bounds are added: wind above 25, temperature below 4 but above absolute zero, and fuel above 100
+remain accepted reports with `no_go`. Malformed or non-finite readings, booleans/numeric strings,
 missing/blank required text, and unexpected fields receive clear `422` responses.
 
 Example submission from another terminal:

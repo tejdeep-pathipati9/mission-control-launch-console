@@ -85,6 +85,8 @@ function collectReport() {
     const value = Number(input.value);
     if (!input.value.trim() || !Number.isFinite(value) || input.validity.badInput) {
       errors.push({ field: name, message: "Enter a finite number." });
+    } else if (input.min !== "" && value < Number(input.min)) {
+      errors.push({ field: name, message: `Enter a value of ${input.min} or higher.` });
     }
     payload[name] = value;
   }
@@ -168,8 +170,10 @@ function renderReport(report) {
   }
   renderList("violations", report.violations_json, "None. All readings are within launch limits.");
   const checks = report.checks ?? [];
-  const complete = checks.filter((check) => check.outcome !== "error").length;
-  const errors = checks.filter((check) => check.outcome === "error").length;
+  const complete = checks.filter((check) =>
+    ["clear", "flagged"].includes(check.outcome) && check.details_json?.error_reason == null
+  ).length;
+  const errors = checks.length - complete;
   setText("checks-summary", `${complete} of 3 checks completed${errors ? `; ${errors} could not complete` : ""}.`);
   renderList("findings", checks.filter((check) => check.outcome !== "clear").map((check) =>
     `${checkLabels[check.check_type] ?? check.check_type} — ${check.outcome === "error" ? "unavailable" : "flagged"}: ${check.reason}`

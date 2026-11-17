@@ -95,6 +95,43 @@ def test_invalid_readings_are_rejected(client, payload, field, value):
     assert client.get("/api/reports").json() == []
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("wind_knots", -1),
+        ("wind_knots", -0.001),
+        ("temp_c", -273.15001),
+        ("fuel_pct", -0.001),
+    ],
+)
+def test_impossible_readings_are_rejected_before_persistence(client, payload, field, value):
+    response = client.post("/api/reports", json={**payload, field: value})
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["body", field]
+    assert client.get("/api/reports").json() == []
+
+
+@pytest.mark.parametrize(
+    "field,value,verdict",
+    [
+        ("wind_knots", 0, "go"),
+        ("temp_c", -273.15, "no_go"),
+        ("temp_c", -20, "no_go"),
+        ("fuel_pct", 0, "no_go"),
+        ("fuel_pct", 100.001, "no_go"),
+        ("wind_knots", 25.001, "no_go"),
+    ],
+)
+def test_sanity_boundaries_and_real_launch_limit_breaches_remain_valid(
+    client, payload, field, value, verdict
+):
+    response = client.post("/api/reports", json={**payload, field: value})
+    assert response.status_code == 202
+    detail = client.get(response.json()["status_url"]).json()
+    assert detail[field] == value
+    assert detail["verdict"] == verdict
+
+
 @pytest.mark.parametrize("field", ["wind_knots", "temp_c", "fuel_pct"])
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_nonfinite_readings_return_json_validation_error(client, payload, field, value):

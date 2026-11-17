@@ -53,7 +53,7 @@ The first command must eventually expose the complete browser workflow, not only
    - `temp_c >= 4`
    - `98 <= fuel_pct <= 100`
    - Any violation produces `no_go`; otherwise `go`. Record **all** violations.
-2. **Bad input is rejected clearly.** Engineer name, station, and note are required; readings must be finite numeric values. Out-of-limit *numeric* readings are valid reports and must produce `no_go`, not a validation error.
+2. **Bad input is rejected clearly.** Engineer name, station, and note are required; readings must be finite numeric values with wind >= 0, temperature >= -273.15°C, and fuel >= 0%. These input sanity minima apply before persistence. Readings outside the launch limits remain valid and produce `no_go`, including fuel above 100%; no arbitrary upper bounds are introduced.
 3. **Severity controls deadline.** `high -> 5 min`, `medium -> 15 min`, `low -> 30 min`, measured from report creation. Any reading violation forces `high`, even if the classifier returns `low`.
 4. **Classification is structured and validated.** Use a fixed subsystem enum (e.g. `propulsion`, `avionics`, `weather`, `ground_systems`, `other`, `unknown`) and severity (`high`, `medium`, `low`). Invalid/unavailable classification safely becomes `unknown` / `high`; retain a trace of the fallback.
 5. **Three separate model checks run concurrently:** prompt-injection instructions, missing details, and panicked/alarmist tone. Keep their results distinct. Suspicious instructions must be flagged for human review and must not affect the verdict.
@@ -99,18 +99,18 @@ Engineer submits report
 | Condition | Report status | Can Flight Director approve? |
 | --- | --- | --- |
 | Pipeline still running | `processing` | **No** |
-| All three checks completed as `clear` or `flagged`; latest briefing passed evaluation | `pending_review` | **Yes**, after explicitly acknowledging every flagged finding |
+| All three checks completed successfully as `clear` or `flagged`, without an evaluation error; latest briefing passed evaluation | `pending_review` | **Yes**, after explicitly acknowledging every flagged finding |
 | Injection, missing-information, or panic check returns `flagged` but completes successfully | `pending_review` (assuming quality passes) | **Yes**, only with recorded acknowledgement; flag stays visible |
 | Any required check is missing, raises an error, times out, or has an invalid response | `failed` | **No**; do not treat failure as `clear` |
 | Drafting fails, evaluation call fails, or all three drafts fail quality review | `failed` | **No**; preserve drafts/feedback and failure reason |
 | Classification returns an invalid value or its call fails | Continue with fallback `unknown` / `high`; warning in trace | **Potentially**, once all required checks and quality review succeed |
 | Briefing already approved | `approved` | **No second approval** |
 
-**Important distinction:** `flagged` means a completed check found something worth human attention; `error` means the check did **not** complete reliably. A flagged note is reviewable, an unresolved check is not. A `no_go` report may still have its **briefing** approved; approval never turns it into `go` or authorizes launch.
+**Important distinction:** A successfully evaluated `flagged` check found something worth human attention; `error` means a check did not complete reliably. A malformed hidden-instructions reply also produces a visible `flagged` result, with `details_json.review_required = true` and a non-null `error_reason`. This fallback remains unresolved: fail the trace/run, block drafting and approval, and preserve the flag for review. Acknowledging it cannot turn an evaluation failure into a completed check. A `no_go` report may still have its **briefing** approved; approval never turns it into `go` or authorizes launch.
 
 **Failure policy:** Keep the report, code-derived verdict, completed check results, failed step, draft history, and trace even when processing fails. Save a machine-readable failure reason. Do not quietly use fake output after a live model failure. A reprocessing attempt (when implemented) must create a fresh `pipeline_run` and must not mutate historical runs or approvals.
 
-**Failure reasons:** At minimum distinguish `interrupted`, `scheduling_failed`, `required_check_failed`, `draft_failed`, `evaluation_failed`, and `quality_review_exhausted`. Classification fallback is a warning, not a failed run. If any required check errors, persist all three results and end the run as `failed` before drafting. A model review response that fails schema validation counts as `evaluation_failed`; a valid negative quality assessment consumes a round and supplies revision feedback.
+**Failure reasons:** At minimum distinguish `interrupted`, `scheduling_failed`, `required_check_failed`, `draft_failed`, `evaluation_failed`, and `quality_review_exhausted`. Classification fallback is a warning, not a failed run. If any required check errors (including a fail-safe injection flag with an evaluation-error marker), persist all three results and end the run as `failed` before drafting. A model review response that fails schema validation counts as `evaluation_failed`; a valid negative quality assessment consumes a round and supplies revision feedback.
 
 ## 4. Data model (initial schema)
 
@@ -125,7 +125,7 @@ Use **six tables** with foreign keys enabled and timestamps stored consistently 
 | `briefing_versions` | `id`, `report_id`, `run_id`, `round_number`, `content`, `evaluator_feedback`, `quality_passed`, `created_at` | Save all attempts and feedback; max three rounds per run |
 | `approvals` | `id`, `report_id`, `briefing_version_id`, `approved_by`, `acknowledged_flags_json`, `approved_at` | Audit the exact version approved and flagged check results acknowledged |
 
-**Check persistence:** Write all three `check_results` when the check stage completes, including errors. A completed check can be `clear` or `flagged`; if it cannot be evaluated, persist `error` rather than fabricating a pass. A crash can leave a subset of rows; restart recovery marks that run failed, and missing results never imply a clean check. Store human-readable reasons and optional structured details. The API can derive a summary of flags from these rows, but the rows—not report flags or trace JSON—are authoritative. Include the associated `run_id` in API results so retries cannot mix findings from different attempts.
+**Check persistence:** Write all three `check_results` when the check stage completes, including errors. A completed check can be `clear` or `flagged`; if it cannot be evaluated, persist `error` rather than fabricating a pass, except malformed injection replies, which persist a fail-safe `flagged` result with an explicit evaluation-error marker. A crash can leave a subset of rows; restart recovery marks that run failed, and missing results never imply a clean check. Store human-readable reasons and optional structured details. The API can derive a summary of flags from these rows, but the rows—not report flags or trace JSON—are authoritative. Include the associated `run_id` in API results so retries cannot mix findings from different attempts.
 
 **Statuses:** `processing`, `pending_review`, `approved`, `failed`. `failed` also has a machine-readable `pipeline_runs.failure_reason`. All briefings require an explicit human approval.
 
@@ -277,7 +277,7 @@ Use small local JavaScript files for `fetch`, form submission, selection, and tw
 - [ ] Complete the director page so the root Compose command exposes the entire browser workflow.
 - [ ] Verify the full workflow, restart persistence, and usability.
 
-**Feature 7 evidence:** 398 Python tests plus 19 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; interactive browser/layout QA is still pending because browser access was unavailable.
+**Feature 7 evidence:** 417 Python tests plus 24 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; interactive browser/layout QA is still pending because browser access was unavailable.
 
 **Done when:** All information required by the rubric can be viewed and the approval performed from the browser.
 

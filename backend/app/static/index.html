@@ -44,21 +44,21 @@
         <div class="grid three-columns">
           <div class="field">
             <label for="wind_knots">Wind (knots)</label>
-            <input id="wind_knots" name="wind_knots" type="number" required step="any"
+            <input id="wind_knots" name="wind_knots" type="number" required step="any" min="0"
                    aria-describedby="wind-help wind_knots-error">
-            <p class="help" id="wind-help">Launch limit: 25 knots or less.</p>
+            <p class="help" id="wind-help">Use a nonnegative reading. Launch limit: 25 knots or less.</p>
             <p class="field-error" id="wind_knots-error" hidden></p>
           </div>
           <div class="field">
             <label for="temp_c">Temperature (°C)</label>
-            <input id="temp_c" name="temp_c" type="number" required step="any"
+            <input id="temp_c" name="temp_c" type="number" required step="any" min="-273.15"
                    aria-describedby="temp-help temp_c-error">
             <p class="help" id="temp-help">Launch limit: 4°C or more.</p>
             <p class="field-error" id="temp_c-error" hidden></p>
           </div>
           <div class="field">
             <label for="fuel_pct">Fuel (%)</label>
-            <input id="fuel_pct" name="fuel_pct" type="number" required step="any"
+            <input id="fuel_pct" name="fuel_pct" type="number" required step="any" min="0"
                    aria-describedby="fuel-help fuel_pct-error">
             <p class="help" id="fuel-help">Launch limit: 98% to 100%, inclusive.</p>
             <p class="field-error" id="fuel_pct-error" hidden></p>
