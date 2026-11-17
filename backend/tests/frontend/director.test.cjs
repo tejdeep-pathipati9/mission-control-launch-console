@@ -45,7 +45,7 @@ const savedApproval = (version = 21) => reply({ report_id: 7, run_id: 10, status
   approval: { briefing_version_id: version } });
 
 test("empty queue loads without credentials or selecting/approving a report", async () => {
-  const ui = harness([reply([])], "/director");
+  const ui = harness([reply([])], "/reports");
   await flush();
   assert.match(ui.el("queue-status").textContent, /No reports yet/);
   assert.equal(ui.el("report-status").hidden, true);
@@ -54,13 +54,31 @@ test("empty queue loads without credentials or selecting/approving a report", as
   assert.equal(ui.el("previous-page").disabled, true);
 });
 
+test("queue distinguishes unavailable and partial costs from a recorded zero", async () => {
+  const data = [
+    report({ id: 1 }),
+    report({ id: 2, costs: { cost_complete: false, known_cost_usd: "0.003" } }),
+    report({ id: 3, costs: { cost_complete: true, total_cost_usd: "0" } }),
+    report({ id: 4, status: "processing", brief_by_at: null }),
+  ];
+  const ui = harness([reply(data)], "/reports");
+  await flush();
+  const rows = ui.el("queue-body").children;
+  assert.match(rows[0].children[6].textContent, /Unavailable/);
+  assert.ok(!rows[0].children[6].textContent.includes("$0"));
+  assert.match(rows[1].children[6].textContent, /\$0\.003 Partial cost/);
+  assert.equal(rows[2].children[6].textContent, "$0.00");
+  assert.match(rows[3].children[6].textContent, /Pending/);
+  assert.equal(rows[3].children[4].textContent, "Pending");
+});
+
 test("queue selection shows one report and a standalone report link", async () => {
   const data = report();
-  const ui = harness([reply([data]), reply(data)], "/director");
+  const ui = harness([reply([data]), reply(data)], "/reports");
   await flush();
   ui.click("queue-report-7");
   await flush();
-  assert.equal(ui.location.href, "/director?report=7");
+  assert.equal(ui.location.href, "/reports?report=7");
   assert.equal(ui.el("report-link").href, "/reports/7");
   assert.equal(ui.el("verdict").textContent, "NO-GO");
   assert.equal(ui.el("original-engineer_name").textContent, sample.engineer_name);
@@ -69,7 +87,7 @@ test("queue selection shows one report and a standalone report link", async () =
 });
 
 test("deep links load the queue and selected report independently", async () => {
-  const ui = harness([reply([]), reply(report())], "/director?report=7");
+  const ui = harness([reply([]), reply(report())], "/reports?report=7");
   await flush();
   assert.equal(ui.el("report-result").hidden, false);
   assert.equal(ui.el("report-heading").textContent, "Report #7");
@@ -78,7 +96,7 @@ test("deep links load the queue and selected report independently", async () => 
 
 test("pagination uses an extra row to determine the next page without losing a selected report", async () => {
   const rows = Array.from({ length: 26 }, (_, i) => report({ id: i + 1 }));
-  const ui = harness([reply(rows), reply([report({ id: 27 })]), reply(rows)], "/director");
+  const ui = harness([reply(rows), reply([report({ id: 27 })]), reply(rows)], "/reports");
   await flush();
   assert.equal(ui.el("queue-body").children.length, 25);
   assert.equal(ui.el("next-page").disabled, false);
@@ -92,7 +110,7 @@ test("pagination uses an extra row to determine the next page without losing a s
 });
 
 test("processing details poll every two seconds and stop when review is ready", async () => {
-  const ui = harness([reply([]), reply(report({ status: "processing" })), reply(report())], "/director?report=7");
+  const ui = harness([reply([]), reply(report({ status: "processing" })), reply(report())], "/reports?report=7");
   await flush();
   await ui.poll();
   assert.match(ui.el("status-message").textContent, /Flight Director review/);
@@ -101,7 +119,7 @@ test("processing details poll every two seconds and stop when review is ready", 
 });
 
 test("queue failure pauses only the queue and can be retried", async () => {
-  const ui = harness([new Error("offline"), reply(report()), reply([])], "/director?report=7");
+  const ui = harness([new Error("offline"), reply(report()), reply([])], "/reports?report=7");
   await flush();
   assert.equal(ui.el("queue-error").hidden, false);
   assert.equal(ui.el("report-result").hidden, false);
@@ -113,7 +131,7 @@ test("queue failure pauses only the queue and can be retried", async () => {
 test("a stale selected-report response cannot overwrite the newly selected report", async () => {
   let finish;
   const ui = harness([reply([report(), report({ id: 8 })]),
-    () => new Promise((resolve) => { finish = resolve; }), reply(report({ id: 8 }))], "/director");
+    () => new Promise((resolve) => { finish = resolve; }), reply(report({ id: 8 }))], "/reports");
   await flush();
   ui.click("queue-report-7");
   ui.click("queue-report-8");
@@ -131,7 +149,7 @@ test("trace has one card per step, preserves unavailable counts/costs, and displ
     { step_name: "draft", status: "processing", input_tokens: null, output_tokens: null,
       cost_usd: null, latency_ms: null, details_json: { round_number: 2, response_text: "<script>bad()</script>" } },
   ];
-  const ui = harness([reply([]), reply(report({ trace }))], "/director?report=7");
+  const ui = harness([reply([]), reply(report({ trace }))], "/reports?report=7");
   await flush();
   const cards = ui.el("trace-cards").children;
   assert.equal(cards.length, 2);
@@ -153,7 +171,7 @@ test("draft history, full findings, and approval audit remain inspectable", asyn
       details_json: { findings: ["<script>instruction</script>"], error_reason: "invalid_output" } }],
     approvals: [{ briefing_version_id: 2, approved_by: "demo-flight-director",
       approved_at: "2026-11-17T20:03:00Z", acknowledged_flags_json: [3] }],
-  }))], "/director?report=7");
+  }))], "/reports?report=7");
   await flush();
   assert.match(ui.el("draft-history").textContent, /old draft/);
   assert.match(ui.el("draft-history").textContent, /Restore verdict/);
@@ -164,7 +182,7 @@ test("draft history, full findings, and approval audit remain inspectable", asyn
 });
 
 test("page navigation stops queue and detail polling", async () => {
-  const ui = harness([reply([]), reply(report({ status: "processing" }))], "/director?report=7");
+  const ui = harness([reply([]), reply(report({ status: "processing" }))], "/reports?report=7");
   await flush();
   ui.windowEvents.pagehide();
   assert.equal(ui.timers.size, 0);
@@ -173,7 +191,7 @@ test("page navigation stops queue and detail polling", async () => {
 test("director approval requires explicit flags, sends only version IDs, and preserves NO-GO", async () => {
   const data = ready();
   const saved = approved(data);
-  const ui = harness([reply([data]), reply(data), identity(), savedApproval(), reply(saved), reply([saved])], "/director?report=7");
+  const ui = harness([reply([data]), reply(data), identity(), savedApproval(), reply(saved), reply([saved])], "/reports?report=7");
   await flush();
   assert.equal(ui.el("approve-briefing").disabled, true);
   await connect(ui);
@@ -198,7 +216,7 @@ test("director approval requires explicit flags, sends only version IDs, and pre
 });
 
 test("an authenticated engineer can inspect but cannot enable approval", async () => {
-  const ui = harness([reply([]), reply(ready()), identity("engineer")], "/director?report=7");
+  const ui = harness([reply([]), reply(ready()), identity("engineer")], "/reports?report=7");
   await flush();
   await connect(ui);
   ui.change("ack-check-101", true);
@@ -217,7 +235,7 @@ for (const scenario of ["processing", "failed", "quality_failed", "malformed_che
     if (scenario === "malformed_check") data.checks[0].details_json.error_reason = "invalid_output";
     if (scenario === "missing_check") data.checks.pop();
     if (scenario === "stale_version") data.latest_briefing.run_id = 9;
-    const ui = harness([reply([]), reply(data), identity()], "/director?report=7");
+    const ui = harness([reply([]), reply(data), identity()], "/reports?report=7");
     await flush();
     await connect(ui);
     ui.change("ack-check-101", true);
@@ -231,7 +249,7 @@ test("all flags must be checked and can be unchecked before approval", async () 
   const data = ready();
   data.checks[1].outcome = "flagged";
   data.checks[1].details_json.findings = ["Missing observation time."];
-  const ui = harness([reply([]), reply(data), identity()], "/director?report=7");
+  const ui = harness([reply([]), reply(data), identity()], "/reports?report=7");
   await flush();
   await connect(ui);
   ui.change("ack-check-101", true);
@@ -246,7 +264,7 @@ test("a report with no flags needs no fabricated acknowledgement IDs", async () 
   const data = ready();
   data.checks[0].outcome = "clear";
   data.checks[0].details_json.findings = [];
-  const ui = harness([reply([]), reply(data), identity(), savedApproval(), reply(approved(data)), reply([])], "/director?report=7");
+  const ui = harness([reply([]), reply(data), identity(), savedApproval(), reply(approved(data)), reply([])], "/reports?report=7");
   await flush();
   await connect(ui);
   assert.equal(ui.el("approve-briefing").disabled, false);
@@ -258,7 +276,7 @@ test("a stale-approval conflict reloads the report and requires new acknowledgem
   const revised = ready();
   revised.latest_briefing.id = 22;
   const ui = harness([reply([]), reply(ready()), identity(),
-    { status: 409, data: { detail: { code: "stale_briefing" } } }, reply(revised), reply([])], "/director?report=7");
+    { status: 409, data: { detail: { code: "stale_briefing" } } }, reply(revised), reply([])], "/reports?report=7");
   await flush();
   await connect(ui);
   ui.change("ack-check-101", true);
@@ -270,7 +288,7 @@ test("a stale-approval conflict reloads the report and requires new acknowledgem
 });
 
 test("an uncertain save is checked with GET and never automatically posted again", async () => {
-  const ui = harness([reply([]), reply(ready()), identity(), new Error("Connection lost"), reply(approved()), reply([])], "/director?report=7");
+  const ui = harness([reply([]), reply(ready()), identity(), new Error("Connection lost"), reply(approved()), reply([])], "/reports?report=7");
   await flush();
   await connect(ui);
   ui.change("ack-check-101", true);
@@ -284,7 +302,7 @@ test("an uncertain save is checked with GET and never automatically posted again
 test("failed refresh makes an otherwise eligible briefing unapprovable", async () => {
   const data = ready();
   data.checks[0].outcome = "clear";
-  const ui = harness([reply([]), reply(data), identity(), new Error("offline")], "/director?report=7");
+  const ui = harness([reply([]), reply(data), identity(), new Error("offline")], "/reports?report=7");
   await flush();
   await connect(ui);
   assert.equal(ui.el("approve-briefing").disabled, false);
@@ -295,7 +313,7 @@ test("failed refresh makes an otherwise eligible briefing unapprovable", async (
 });
 
 test("authentication failure clears entered credentials and cannot grant a role", async () => {
-  const ui = harness([reply([]), reply(ready()), { status: 401, data: { detail: "Invalid" } }], "/director?report=7");
+  const ui = harness([reply([]), reply(ready()), { status: 401, data: { detail: "Invalid" } }], "/reports?report=7");
   await flush();
   await connect(ui);
   assert.equal(ui.el("director-token").value, "");
@@ -305,20 +323,20 @@ test("authentication failure clears entered credentials and cannot grant a role"
 
 test("disconnect invalidates a late identity response and clears acknowledgements", async () => {
   let finish;
-  const ui = harness([reply([]), reply(ready()), () => new Promise((resolve) => { finish = resolve; })], "/director?report=7");
+  const ui = harness([reply([]), reply(ready()), () => new Promise((resolve) => { finish = resolve; })], "/reports?report=7");
   await flush();
   const pending = connect(ui);
   ui.click("disconnect-director");
   finish({ ok: true, json: async () => ({ subject: "demo-flight-director", role: "flight_director" }) });
   await pending;
-  assert.match(ui.el("auth-status").textContent, /Not connected/);
+  assert.match(ui.el("auth-status").textContent, /Signed out/);
   assert.equal(ui.el("approve-briefing").disabled, true);
 });
 
 test("returning through browser history requires authentication again", async () => {
   const data = ready();
   data.checks[0].outcome = "clear";
-  const ui = harness([reply([]), reply(data), identity(), reply([]), reply(data)], "/director?report=7");
+  const ui = harness([reply([]), reply(data), identity(), reply([]), reply(data)], "/reports?report=7");
   await flush();
   await connect(ui);
   assert.equal(ui.el("approve-briefing").disabled, false);
@@ -326,7 +344,7 @@ test("returning through browser history requires authentication again", async ()
   ui.windowEvents.pageshow({ persisted: true });
   await flush();
   assert.equal(ui.el("approve-briefing").disabled, true);
-  assert.match(ui.el("auth-status").textContent, /Not connected/);
+  assert.match(ui.el("auth-status").textContent, /Signed out/);
   assert.equal(ui.el("director-token").value, "");
   assert.equal(ui.requests.filter((request) => request.url === "/api/auth/me").length, 1);
 });

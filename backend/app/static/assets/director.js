@@ -65,7 +65,9 @@
       const idCell = node("td");
       const link = node("a", `#${report.id}`);
       link.id = `queue-report-${report.id}`;
-      link.href = `/director?report=${report.id}`;
+      link.href = `/reports?report=${report.id}`;
+      link.className = "report-id";
+      row.className = report.id === selectedId ? "selected-row" : "";
       if (report.id === selectedId) link.setAttribute("aria-current", "true");
       link.addEventListener("click", (event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || (event.button ?? 0) !== 0) return;
@@ -74,13 +76,37 @@
       });
       idCell.append(link);
       row.append(idCell);
+      row.append(node("td", report.station));
+      const status = node("td");
+      const badge = node("span", statusLabels[report.status] ?? report.status);
+      badge.className = "status-badge";
+      status.append(badge);
+      row.append(status);
+      const verdict = node("td", report.verdict === "go" ? "GO" : "NO-GO");
+      verdict.className = "verdict-cell";
+      row.append(verdict);
+      const deadline = node("td");
+      deadline.className = "deadline-cell";
+      deadline.title = utcTime(report.brief_by_at);
+      const date = report.brief_by_at && new Date(report.brief_by_at);
+      if (date && !Number.isNaN(date.getTime())) {
+        deadline.append(node("span", date.toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })));
+        deadline.append(node("small", date.toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" }) + " UTC"));
+      } else deadline.textContent = report.status === "processing" ? "Pending" : "Unavailable";
+      row.append(deadline);
+      row.append(node("td", String(report.flags?.length ?? 0)));
       const costs = report.costs;
-      for (const value of [
-        report.station, statusLabels[report.status] ?? report.status,
-        report.verdict === "go" ? "GO" : "NO-GO", utcTime(report.brief_by_at),
-        String(report.flags?.length ?? 0),
-        costs?.cost_complete ? usd(costs.total_cost_usd) : `Incomplete; known subtotal ${usd(costs?.known_cost_usd)}`,
-      ]) row.append(node("td", value));
+      const cost = node("td");
+      cost.className = "cost-cell";
+      if (costs?.cost_complete) cost.append(node("span", usd(costs.total_cost_usd).replace(" USD", "")));
+      else if (costs?.known_cost_usd != null && Number(costs.known_cost_usd) > 0) {
+        cost.append(node("span", usd(costs.known_cost_usd).replace(" USD", "")));
+        cost.append(node("small", "Partial cost"));
+      } else {
+        cost.append(node("span", report.status === "processing" ? "Pending" : "Unavailable"));
+        cost.append(node("small", "Usage or pricing incomplete"));
+      }
+      row.append(cost);
       body.append(row);
     }
     if (focusId?.startsWith("queue-report-")) document.getElementById(focusId)?.focus();
@@ -272,7 +298,7 @@
     document.getElementById("report-result").hidden = true;
     document.getElementById("selection-hint").hidden = true;
     document.getElementById("report-link").href = `/reports/${id}`;
-    history.replaceState(null, "", `/director?report=${id}`);
+    history.replaceState(null, "", `/reports?report=${id}`);
     loadDetail(generation, focus);
   }
 
@@ -318,7 +344,7 @@
     let message = reason;
     if (posting) message = "Saving human approval…";
     else if (!detailFresh && selectedReport) message = "Refresh this report before approval.";
-    else if (!reason && principal?.role !== "flight_director") message = "Connect as a Flight Director to approve this briefing.";
+    else if (!reason && principal?.role !== "flight_director") message = "Sign in under Approval access to approve this briefing.";
     else if (!reason && !acknowledged) message = "Explicitly acknowledge every flagged check and its listed findings.";
     else if (!reason) message = `Ready to approve this briefing. The launch verdict will remain ${selectedReport.verdict === "go" ? "GO" : "NO-GO"}.`;
     setText("approval-status", message);
@@ -329,7 +355,7 @@
     queueControls();
   }
 
-  function clearIdentity(message = "Not connected. Connect again to approve a briefing.") {
+  function clearIdentity(message = "Signed out. Sign in to approve a briefing.") {
     credential = "";
     principal = null;
     document.getElementById("director-token").value = "";
@@ -344,9 +370,9 @@
     const token = document.getElementById("director-token").value;
     const generation = ++authGeneration;
     authController?.abort();
-    clearIdentity("Checking demo identity…");
+    clearIdentity("Checking access…");
     if (!/^[\x21-\x7E]{32,256}$/.test(token)) {
-      setText("auth-status", "Enter the configured demo token: 32–256 ASCII characters without spaces.");
+      setText("auth-status", "Enter your configured approval access key (32–256 characters, no spaces).");
       return;
     }
     authBusy = true;
@@ -360,9 +386,9 @@
       if (typeof identity.subject !== "string" || !["flight_director", "engineer"].includes(identity.role)) throw new Error("Invalid identity");
       principal = identity;
       credential = token;
-      setText("auth-status", `Connected as ${identity.subject} (${identity.role}, local demo).${identity.role === "engineer" ? " Flight Director access is required to approve." : ""}`);
+      setText("auth-status", identity.role === "flight_director" ? "Signed in as Flight Director." : "Signed in as Engineer. Flight Director access is required to approve.");
     } catch {
-      if (generation === authGeneration) clearIdentity("Could not verify the demo token. Check it and try again.");
+      if (generation === authGeneration) clearIdentity("Could not verify the access key. Check it and try again.");
     } finally {
       if (generation === authGeneration) { authBusy = false; updateApproval(); }
     }
@@ -400,7 +426,7 @@
       notice(`Briefing version #${payload.briefing_version_id} approved. The launch verdict is unchanged.`);
     } catch (error) {
       if (generation !== postGeneration) return;
-      if ([401, 403].includes(error.status)) clearIdentity("Director authentication is no longer valid. Connect again.");
+      if ([401, 403].includes(error.status)) clearIdentity("Your approval access has expired. Sign in again.");
       notice(error.status === 409
         ? "The report changed or an approval condition was not met. Review the refreshed report and acknowledgements."
         : "Approval could not be confirmed. Review the refreshed report before trying again; it may already be approved.");

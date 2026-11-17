@@ -12,11 +12,12 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="/">Mission Control</a>
-    <nav aria-label="Main navigation"><a href="/">Submit report</a> · <a href="/director">Flight Director</a></nav>
+    <nav aria-label="Main navigation"><a href="/" aria-current="page">New report</a><a href="/reports">Reports</a></nav>
   </header>
   <main id="main">
+    <p class="eyebrow">Engineering</p>
     <h1>Report an anomaly</h1>
-    <p>Submit the readings and what you observed. All fields are required. Your report will open on a separate page.</p>
+    <p class="page-description">Record the readings and what you observed. All fields are required.</p>
     <noscript><p>JavaScript is needed to submit a report. Its status and briefing open on a separate page.</p></noscript>
 
     <section id="form-errors" class="notice" role="alert" tabindex="-1" hidden>
@@ -74,11 +75,11 @@
           <p class="field-error" id="note-error" hidden></p>
         </div>
         <p>Out-of-limit readings are accepted and produce a NO-GO verdict.</p>
-        <button id="submit-report" type="submit" disabled>Submit report</button>
+        <button id="submit-report" class="primary" type="submit" disabled>Submit report</button>
       </fieldset>
     </form>
 
   </main>
-  <footer>Mission Control · Assignment demonstration</footer>
+  <footer>Mission Control <span>Briefing approval does not authorize launch.</span></footer>
 </body>
 </html>

@@ -9,7 +9,7 @@ const sample = { engineer_name: "Avery Chen", station: "Weather", wind_knots: "2
 // In-memory DOM surface for controller tests. This is not a visual browser test.
 function harness(responses = [], pathname = "/") {
   const url = new URL(pathname, "http://local.test");
-  const page = url.pathname === "/" ? "index.html" : (url.pathname === "/director" ? "director.html" : "report.html");
+  const page = url.pathname === "/" ? "index.html" : (url.pathname === "/reports" ? "director.html" : "report.html");
   const html = fs.readFileSync(path.join(root, page), "utf8");
   const navigations = [];
   const elements = new Map();

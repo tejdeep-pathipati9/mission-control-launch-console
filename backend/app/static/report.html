@@ -13,7 +13,7 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="/">Mission Control</a>
-    <nav aria-label="Main navigation"><a href="/">Submit report</a> · <a href="/director">Flight Director</a></nav>
+    <nav aria-label="Main navigation"><a href="/">New report</a><a href="/reports">Reports</a></nav>
   </header>
   <main id="main">
     <noscript><p>JavaScript is needed to load report details and follow processing status.</p></noscript>
@@ -23,7 +23,7 @@
         <a id="new-report" href="/">New report</a>
       </div>
       <p id="status-message" role="status" aria-live="polite">Loading report status…</p>
-      <p><a id="report-link" href="/">Link to this report</a> · <a id="director-link" href="/director">Review in director console</a></p>
+      <p class="report-actions"><a id="report-link" href="/">Report link</a><a id="director-link" href="/reports">Review and approve</a></p>
       <div id="poll-error" class="notice" role="alert" hidden>
         <p id="poll-error-message"></p>
         <button id="retry-status" type="button">Retry status</button>
@@ -61,6 +61,6 @@
       </div>
     </section>
   </main>
-  <footer>Mission Control · Assignment demonstration</footer>
+  <footer>Mission Control <span>Briefing approval does not authorize launch.</span></footer>
 </body>
 </html>

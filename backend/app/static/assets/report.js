@@ -60,7 +60,7 @@
     document.title = `Report #${reportId} · Mission Control`;
     setText("report-heading", `Report #${reportId}`);
     document.querySelector("#report-link").href = `/reports/${reportId}`;
-    document.querySelector("#director-link").href = `/director?report=${reportId}`;
+    document.querySelector("#director-link").href = `/reports?report=${reportId}`;
     pollReport(generation);
   }
 })();

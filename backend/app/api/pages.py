@@ -49,10 +49,12 @@ def report_page(report_id: str) -> FileResponse:
 
 
 @router.get("/director")
-def director_page() -> FileResponse:
-    return html_page("director.html")
+def director_page(request: Request) -> RedirectResponse:
+    report_id = request.query_params.get("report")
+    target = f"/reports?report={report_id}" if valid_report_id(report_id) else "/reports"
+    return RedirectResponse(target, status_code=307)
 
 
 @router.get("/reports")
-def report_queue() -> RedirectResponse:
-    return RedirectResponse("/director", status_code=307)
+def report_queue() -> FileResponse:
+    return html_page("director.html")

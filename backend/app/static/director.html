@@ -3,54 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Flight Director · Mission Control</title>
+  <title>Reports · Mission Control</title>
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/common.js" defer></script>
   <script src="/assets/report-view.js" defer></script>
   <script src="/assets/director.js" defer></script>
 </head>
-<body>
+<body class="queue-page">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="/">Mission Control</a>
-    <nav aria-label="Main navigation"><a href="/">Submit report</a> · <a href="/director" aria-current="page">Flight Director</a></nav>
+    <nav aria-label="Main navigation"><a href="/">New report</a><a href="/reports" aria-current="page">Reports</a></nav>
   </header>
   <main id="main">
-    <h1>Flight Director console</h1>
-    <p>Review reports, inspect their processing history, and approve a briefing.</p>
+    <div class="page-heading">
+      <div><p class="eyebrow">Mission Control</p><h1>Reports</h1><p class="page-description">Review anomalies and approve their briefings.</p></div>
+      <a class="button primary" href="/">New report</a>
+    </div>
     <noscript><p>JavaScript is needed to load the queue and review reports.</p></noscript>
-    <section aria-labelledby="auth-heading">
-      <h2 id="auth-heading">Director access</h2>
-      <p>Connect with your configured local demo token to approve briefings.</p>
+    <details id="director-access" class="access-panel">
+      <summary id="auth-heading">Approval access <span class="help">Flight Director only</span></summary>
+      <p class="help">Enter the approval access key configured for this local application. This is separate from the model API key.</p>
       <form id="director-auth" method="post" novalidate>
         <div class="auth-controls">
-          <div class="field"><label for="director-token">Demo token</label>
+          <div class="field"><label for="director-token">Approval access key</label>
             <input id="director-token" type="password" required minlength="32" maxlength="256" autocomplete="off" disabled>
           </div>
-          <button id="connect-director" type="submit" disabled>Connect</button>
-          <button id="disconnect-director" type="button" disabled>Disconnect</button>
+          <button id="connect-director" type="submit" disabled>Sign in</button>
+          <button id="disconnect-director" type="button" disabled>Sign out</button>
         </div>
-        <p id="auth-status" role="status" aria-live="polite">Not connected. Tokens are kept only while this page is open.</p>
+        <p id="auth-status" class="help" role="status" aria-live="polite">Signed out. Access is kept only while this page is open.</p>
       </form>
-    </section>
-    <section aria-labelledby="queue-heading">
-      <div class="section-heading"><h2 id="queue-heading">Report queue</h2><button id="refresh-queue" type="button">Refresh queue</button></div>
-      <p id="queue-status" role="status" aria-live="polite">Loading reports…</p>
-      <p class="help">The queue updates every five seconds. Selected reports update every two seconds while processing.</p>
+    </details>
+    <section class="queue-section" aria-labelledby="queue-heading">
+      <div class="section-heading"><div><h2 id="queue-heading">Report queue</h2><p id="queue-status" class="help" role="status" aria-live="polite">Loading reports…</p></div><button id="refresh-queue" type="button">Refresh</button></div>
       <p id="queue-error" class="notice" role="alert" hidden></p>
-      <div class="table-scroll">
-        <table><caption>Newest reports first</caption>
+      <div class="table-scroll" role="region" aria-label="Report queue. Scroll horizontally on small screens." tabindex="0">
+        <table><caption class="visually-hidden">Reports, newest first. Updates automatically.</caption>
           <thead><tr><th scope="col">Report</th><th scope="col">Station</th><th scope="col">Status</th><th scope="col">Verdict</th><th scope="col">Brief by (UTC)</th><th scope="col">Flags</th><th scope="col">Cost</th></tr></thead>
           <tbody id="queue-body"></tbody>
         </table>
       </div>
-      <div class="pagination"><button id="previous-page" type="button" disabled>Previous</button><span id="queue-range"></span><button id="next-page" type="button" disabled>Next</button></div>
+      <div class="pagination"><span id="queue-range" class="help"></span><div class="pagination-actions"><button id="previous-page" type="button" disabled>Previous</button><button id="next-page" type="button" disabled>Next</button></div></div>
     </section>
-    <p id="selection-hint">Select a report to review its details and briefing.</p>
+    <p id="selection-hint" class="selection-hint">Select a report to review its briefing, findings, and processing history.</p>
     <section id="report-status" aria-labelledby="report-heading" hidden>
       <div class="section-heading">
         <h2 id="report-heading" tabindex="-1">Selected report</h2>
-        <button id="refresh-report" type="button" disabled>Refresh report</button>
+        <button id="refresh-report" type="button" disabled>Refresh</button>
       </div>
       <p id="status-message" role="status" aria-live="polite">Select a report from the queue.</p>
       <p><a id="report-link" href="/">Link to this report</a></p>
@@ -83,15 +83,6 @@
         <h2>Checks and review findings</h2>
         <p id="checks-summary"></p>
         <div id="check-cards"></div>
-        <form id="approval-form" method="post">
-          <fieldset>
-            <legend>Human briefing approval</legend>
-            <p>Approval covers this briefing only. It does not authorize launch or change the launch verdict.</p>
-            <p id="approval-status" role="status" aria-live="polite"></p>
-            <button id="approve-briefing" type="submit" disabled>Approve briefing</button>
-          </fieldset>
-        </form>
-        <p id="approval-message" class="notice" role="alert" hidden></p>
         <section id="briefing" aria-labelledby="briefing-heading" hidden>
           <h2 id="briefing-heading">Latest briefing</h2>
           <p id="briefing-quality"></p>
@@ -99,12 +90,21 @@
         </section>
         <ul id="latest-feedback"></ul>
         <details id="older-drafts" hidden><summary id="draft-history-label">Earlier drafts</summary><div id="draft-history"></div></details>
+        <form id="approval-form" method="post">
+          <fieldset>
+            <legend>Briefing approval</legend>
+            <p class="help">Confirm that you have reviewed this briefing and all flagged findings.</p>
+            <p id="approval-status" role="status" aria-live="polite"></p>
+            <button id="approve-briefing" class="primary" type="submit" disabled>Approve briefing</button>
+          </fieldset>
+        </form>
+        <p id="approval-message" class="notice" role="alert" hidden></p>
         <section aria-labelledby="cost-heading"><h2 id="cost-heading">Processing costs</h2><div id="cost-summary"></div></section>
         <section aria-labelledby="trace-heading"><h2 id="trace-heading">Step-by-step trace</h2><div id="trace-cards"></div></section>
         <section aria-labelledby="audit-heading"><h2 id="audit-heading">Approval history</h2><div id="approval-history"></div></section>
       </div>
     </section>
   </main>
-  <footer>Mission Control · Assignment demonstration</footer>
+  <footer>Mission Control <span>Briefing approval does not authorize launch.</span></footer>
 </body>
 </html>
