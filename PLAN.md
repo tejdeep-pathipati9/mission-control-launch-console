@@ -164,7 +164,7 @@ Each branch delivers one focused change with its related tests and documentation
 | 3 | `feature/concurrent-checks` | Foundry provider setup (commit 1), then concurrent injection/missing-details/panic checks, per-run persistence, trace totals, and failure/recovery handling (commit 2). | 4 |
 | 4 | `feature/briefing-review` | Shared credential guard/template, then briefing engine and API integration in separate commits. Generation, separate evaluation, feedback-driven revisions, three-round cap, version history, and transition to `pending_review` only when checks and quality pass. | 5 |
 | 5 | `feature/trace-costs` | Two focused commits: pricing/math/configuration, then pipeline/API accounting. Per-step costs, run/report totals, unknown-usage handling, saved pricing, and trace latency. | 6 — accounting |
-| 6 | `feature/director-approval` | Demo identity/session, server-side Flight Director authorization, current-version approval, flag acknowledgements, atomic approval audit, and duplicate/stale approval protection. | 6 — approval |
+| 6 | `feature/director-approval` | Two focused commits: local demo bearer guard/configuration, then transactional approval/API tests. Current-version approval, flag acknowledgements, atomic audit, and duplicate/stale protection. | 6 — approval |
 | 7 | `feature/report-submission-ui` | Select the frontend stack; build the engineer form, validation messages, submission confirmation, and polling states; package the UI into Compose startup. | 7 — engineer workflow |
 | 8 | `feature/director-console` | Director report queue/detail views, verdicts/deadlines, findings, briefing versions, trace cards/costs, authenticated approval, and flag acknowledgement controls. | 7 — director workflow |
 | 9 | `feature/final-verification` | Full-workflow integration fixes, complete-app Docker/offline-test verification, final README evidence, completed tool choices, and grading/demo checks. | 8 |
@@ -187,7 +187,7 @@ Each branch delivers one focused change with its related tests and documentation
 - [x] Implement `POST /api/reports` returning `202`, and `GET /api/reports` / `GET /api/reports/{id}` for polling. Commit report, verdict, run, and rule trace atomically; wire background orchestration with fresh sessions, adding model stages in Milestones 3–5. Incomplete scaffolding must not publish an approvable briefing.
 - [x] Test `202` response contract, polling status, invalid input, database isolation, restart persistence, and marking interrupted runs `failed` on restart.
 
-**Current behavior:** Classification and three concurrent checks persist their results. Any check error fails the run as `required_check_failed`; successful checks proceed through at most three draft/evaluation rounds. A quality-passed briefing moves the run/report to `pending_review`; human approval is still unimplemented. See the [README verification note](README.md#test).
+**Current behavior:** Classification and three concurrent checks persist their results. Any check error fails the run as `required_check_failed`; successful checks proceed through at most three draft/evaluation rounds. A quality-passed briefing moves the run/report to `pending_review`; human approval is available through the role-protected endpoint. See the [README verification note](README.md#test).
 
 **Done when:** The backend starts in Docker, a submitted report survives container recreation, interrupted runs become failed, and bad inputs give useful 4xx responses.
 
@@ -235,24 +235,26 @@ Each branch delivers one focused change with its related tests and documentation
 - [x] Feed evaluator comments to the next drafting round, stopping on pass or after three rounds.
 - [x] Persist each version, feedback, and whether the latest draft passed quality review. If all three fail, set status `failed` and block approval.
 
-**Implementation:** Strict structured drafts carry a summary and copies of canonical facts. Python renders the saved facts and all flagged findings into each briefing; any differing model fact forces rejection even when the evaluator reports a pass. The independent evaluator checks narrative accuracy and quality; this does not guarantee perfect model judgment. Each draft response and version, and each evaluation response and feedback, commit together. Invalid/refused/incomplete responses and timeouts fail explicitly, retaining available usage and prior versions. Interrupted evaluations preserve an unapproved draft; late responses cannot promote stale or terminated runs. Human approval remains a separate feature; Feature 5 adds accounting.
+**Implementation:** Strict structured drafts carry a summary and copies of canonical facts. Python renders the saved facts and all flagged findings into each briefing; any differing model fact forces rejection even when the evaluator reports a pass. The independent evaluator checks narrative accuracy and quality; this does not guarantee perfect model judgment. Each draft response and version, and each evaluation response and feedback, commit together. Invalid/refused/incomplete responses and timeouts fail explicitly, retaining available usage and prior versions. Interrupted evaluations preserve an unapproved draft; late responses cannot promote stale or terminated runs. Feature 5 adds accounting; Feature 6 now supplies explicit human approval.
 
 **Done when:** A fake evaluator that fails twice and passes once produces exactly three rounds with feedback carried forward; an always-failing evaluator stops at three.
 
 ### Milestone 6 — Human approval, trace, and costs
 
-- [ ] Implement role-protected approval of the current pending briefing.
-- [ ] Block approval of missing, errored/unresolved-check, quality-failed, already approved, or stale briefing versions; require recorded acknowledgement of every flagged finding.
+- [x] Implement role-protected approval of the current pending briefing.
+- [x] Block approval of missing, errored/unresolved-check, quality-failed, already approved, or stale briefing versions; require recorded acknowledgement of every flagged finding.
 - [x] Persist trace steps for both code and model operations, including status, timestamps, token counts, and derived latency.
 - [x] Calculate per-step and report-total costs using configurable provider rates and reported token usage; handle missing usage explicitly.
 - [x] Return authoritative check results, trace, flags, current-run totals, per-run history, and report-wide cost totals/subtotals through the API.
-- [ ] Return human approval through the API after implementing the approval feature.
+- [x] Return persisted human approval through the API.
 - [x] Test token/cost math, cache categories, billed failures, unavailable usage/prices, provisional subtotals, multiple attempts, saved rates, and restart recovery.
-- [ ] Test unauthorized approval, no-go briefing approval without altering verdict, flagged-check acknowledgements, unresolved-check/failed-quality blocks, correct version, and audit record.
+- [x] Test unauthorized approval, no-go briefing approval without altering verdict, flagged-check acknowledgements, unresolved-check/failed-quality blocks, correct version, audit record, rollback, concurrent requests, and restart persistence.
 
 **Accounting implemented:** Token-cost estimates use Python `Decimal`, round each step to ten decimal places, and persist the applied rates and component amounts. Normalized Claude input includes base/cache reads/cache writes, with raw usage retained separately. Missing usage or needed rates leave amounts null; known subtotals remain visible. Costs are provisional until a run terminates, and interrupted model calls stay unavailable. Report totals cover every attempt without mixing historical checks or briefings into the current run. Existing unpriced history is not repriced on reads. Foundry rates, including optional per-TTL cache-write rates, are deployment configuration.
 
-**Done when:** The backend can show what happened, what it cost, and who approved, without any model being able to approve. Accounting is complete; approval remains the next feature.
+**Approval implemented:** A server-configured demo bearer token selects a fixed Flight Director identity; a separate optional engineer token exercises role denial. Blank tokens grant no access. This guard and `/api/auth/me` helper are implementation choices, not assignment mandates; account management is outside this feature. Approval checks the current run/version, complete checks, quality result, and exact flag IDs. A conditional status update is the first SQL statement, acquiring SQLite's writer lock before validation reads. All checks and the approval audit share that transaction; conflicts or storage errors roll back the status change. Concurrent requests admit one winner. The report becomes `approved`; processing history, costs, flags, and verdict remain unchanged.
+
+**Done when:** The backend can show what happened, what it cost, and who approved, without any model being able to approve. Backend accounting and approval are complete; the browser workflow is next.
 
 ### Milestone 7 — Frontend and final demonstration (**later; stack TBD**)
 
@@ -341,9 +343,9 @@ mission-control/
 - [ ] Model classification has validated structured output and safe fallback.
 - [ ] All three checks execute concurrently; hidden instructions are flagged and cannot alter verdict.
 - [ ] Draft/evaluator loop has feedback, never exceeds three rounds, and blocks approval if quality never passes.
-- [ ] A human-only backend action approves a pending, quality-passed briefing after flag acknowledgements; unresolved checks block approval.
+- [x] A human-only backend action approves a pending, quality-passed briefing after flag acknowledgements; unresolved checks block approval.
 - [x] Each step exposes tokens and calculated costs, with test coverage; authoritative per-run check results are stored separately from traces.
 - [ ] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
 - [ ] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
 
-**Next coding task:** After `feature/trace-costs` is merged, start `feature/director-approval` for the remaining Milestone 6 work. Frontend selection remains deferred until `feature/report-submission-ui`.
+**Next coding task:** After `feature/director-approval` is merged, start `feature/report-submission-ui`: select the frontend stack and implement the engineer submission/polling workflow.
