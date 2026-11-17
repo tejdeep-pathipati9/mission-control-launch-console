@@ -1,0 +1,31 @@
+{
+  "description": "Block common credential reads and withhold recognized secrets from tool output.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/secrets_guard.py\"",
+            "timeout": 5,
+            "statusMessage": "Checking credential access"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/secrets_guard.py\"",
+            "timeout": 5,
+            "statusMessage": "Checking output for credentials"
+          }
+        ]
+      }
+    ]
+  }
+}

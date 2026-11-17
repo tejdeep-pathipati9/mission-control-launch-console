@@ -7,6 +7,7 @@ from app.config import Settings
 from app.db.database import Database
 from app.db.models import PipelineRun, Report, TraceStep, utc_now
 from app.llm.client import ModelClient
+from app.services.briefings import review_briefing
 from app.services.classification import classify_report
 from app.services.safety_checks import run_safety_checks
 
@@ -68,14 +69,15 @@ def report_pipeline(client: ModelClient | None, settings: Settings) -> PipelineR
                 "A required check could not be completed; inspect its error and trace.",
             )
             return
-        # A passing model check is not approval; the next branch adds briefing review.
-        fail_run(
-            database,
-            report_id,
-            run_id,
-            "pipeline_not_implemented",
-            "Classification and checks saved. Briefing generation/review is not implemented yet.",
-        )
+        failure = await review_briefing(database, report_id, run_id, client, settings)
+        if failure:
+            messages = {
+                "required_check_failed": "Required checks must complete before briefing review.",
+                "draft_failed": "Briefing generation failed; inspect the draft trace.",
+                "evaluation_failed": "Briefing evaluation failed; inspect the evaluation trace.",
+                "quality_review_exhausted": "No briefing passed quality review after three rounds.",
+            }
+            fail_run(database, report_id, run_id, failure, messages[failure])
 
     return process
 

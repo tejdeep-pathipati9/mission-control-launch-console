@@ -15,6 +15,7 @@ from app.schemas.checks import (
     MissingDetailsFinding,
     PanicFinding,
 )
+from app.services.trace import refresh_totals
 
 SCHEMAS = {
     "injection": InjectionFinding,
@@ -109,19 +110,6 @@ async def evaluate_check(
     )
 
 
-def _refresh_totals(session, run: PipelineRun) -> None:
-    session.flush()
-    steps = list(session.scalars(select(TraceStep).where(TraceStep.run_id == run.id)))
-    for name, source in (
-        ("total_input_tokens", "input_tokens"),
-        ("total_output_tokens", "output_tokens"),
-        ("total_cost_usd", "cost_usd"),
-    ):
-        values = [getattr(step, source) for step in steps]
-        setattr(run, name, sum(values) if all(value is not None for value in values) else None)
-    run.cost_complete = run.total_cost_usd is not None
-
-
 async def run_safety_checks(
     database: Database, report_id: int, run_id: int, client: ModelClient | None, settings: Settings
 ) -> bool | None:
@@ -169,7 +157,7 @@ async def run_safety_checks(
             session.add(step)
             session.flush()
             step_ids[check_type] = step.id
-        _refresh_totals(session, run)
+        refresh_totals(session, run)
 
     async def run_and_save(check_type: CheckType) -> CheckOutcome:
         started_at = utc_now()
@@ -222,7 +210,7 @@ async def run_safety_checks(
                 else None,
                 "cost_status": "no_call" if no_call else "not_calculated",
             }
-            _refresh_totals(session, run)
+            refresh_totals(session, run)
         return result
 
     # Each call owns its timeout and persistence session; one model error cannot cancel siblings.

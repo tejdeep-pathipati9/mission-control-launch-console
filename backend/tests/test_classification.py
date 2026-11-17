@@ -16,6 +16,7 @@ from app.main import create_app
 from app.schemas.reports import ReportCreate
 from app.services.classification import classify_report
 from app.services.reports import create_report
+from tests.briefing_fake import SuccessfulBriefingClient
 from tests.test_persistence import serve
 
 
@@ -40,7 +41,7 @@ def submit(tmp_path, payload, scripted_response, **settings_changes):
         text='{"outcome":"clear","reason":"No findings.","findings":[]}',
         usage=TokenUsage(input_tokens=0, output_tokens=0),
     )
-    client = FakeModelClient(
+    client = SuccessfulBriefingClient(
         {
             "classification": [scripted_response],
             **{name: [clear] for name in ("injection", "missing_details", "panic")},
@@ -79,10 +80,11 @@ def test_valid_classification_persists_effective_severity_and_deadline(
         detail["created_at"]
     ) == timedelta(minutes=minutes)
     assert detail["verdict"] == "go"
-    assert detail["status"] == "failed"  # Checks and briefing review are still later features.
-    assert detail["current_run"]["failure_reason"] == "pipeline_not_implemented"
+    assert detail["status"] == "pending_review"
+    assert detail["current_run"]["failure_reason"] is None
     assert len(detail["checks"]) == 3
-    assert detail["briefing_versions"] == detail["approvals"] == []
+    assert len(detail["briefing_versions"]) == 1
+    assert detail["approvals"] == []
     trace = detail["trace"][1]
     assert trace["step_name"] == "classification"
     assert trace["details_json"]["fallback_used"] is False

@@ -162,7 +162,7 @@ Each branch delivers one focused change with its related tests and documentation
 | 1 | `feature/backend-foundation` | FastAPI setup, report submission/polling, SQLite schema and persistence, deterministic launch rules/deadlines, Docker foundation, restart recovery. Already implemented and pushed. | 1–2 |
 | 2 | `feature/model-classification` | One replaceable `ModelClient`, OpenAI/fake adapters, model configuration, structured classification and fallback, effective severity/deadline persistence, model-call timeouts and usage traces. Implemented in two commits. | 3 |
 | 3 | `feature/concurrent-checks` | Foundry provider setup (commit 1), then concurrent injection/missing-details/panic checks, per-run persistence, trace totals, and failure/recovery handling (commit 2). | 4 |
-| 4 | `feature/briefing-review` | Briefing generation, separate evaluation, feedback-driven revisions, three-round cap, version history, and transition to `pending_review` only when checks and quality pass. | 5 |
+| 4 | `feature/briefing-review` | Shared credential guard/template, then briefing engine and API integration in separate commits. Generation, separate evaluation, feedback-driven revisions, three-round cap, version history, and transition to `pending_review` only when checks and quality pass. | 5 |
 | 5 | `feature/trace-costs` | Configured model pricing, per-step cost calculation, run/report totals, unknown-usage handling, and complete trace/cost API responses. | 6 — accounting |
 | 6 | `feature/director-approval` | Demo identity/session, server-side Flight Director authorization, current-version approval, flag acknowledgements, atomic approval audit, and duplicate/stale approval protection. | 6 — approval |
 | 7 | `feature/report-submission-ui` | Select the frontend stack; build the engineer form, validation messages, submission confirmation, and polling states; package the UI into Compose startup. | 7 — engineer workflow |
@@ -187,7 +187,7 @@ Each branch delivers one focused change with its related tests and documentation
 - [x] Implement `POST /api/reports` returning `202`, and `GET /api/reports` / `GET /api/reports/{id}` for polling. Commit report, verdict, run, and rule trace atomically; wire background orchestration with fresh sessions, adding model stages in Milestones 3–5. Incomplete scaffolding must not publish an approvable briefing.
 - [x] Test `202` response contract, polling status, invalid input, database isolation, restart persistence, and marking interrupted runs `failed` on restart.
 
-**Current behavior:** Classification and three concurrent checks persist their results. Any check error fails the run as `required_check_failed`; successful checks stop at `pipeline_not_implemented` until briefing review exists. No approvable briefing is fabricated. See the [README verification note](README.md#test).
+**Current behavior:** Classification and three concurrent checks persist their results. Any check error fails the run as `required_check_failed`; successful checks proceed through at most three draft/evaluation rounds. A quality-passed briefing moves the run/report to `pending_review`; human approval is still unimplemented. See the [README verification note](README.md#test).
 
 **Done when:** The backend starts in Docker, a submitted report survives container recreation, interrupted runs become failed, and bad inputs give useful 4xx responses.
 
@@ -229,11 +229,13 @@ Each branch delivers one focused change with its related tests and documentation
 
 ### Milestone 5 — Briefing generation and quality review
 
-- [ ] Draft a concise briefing with anomaly summary, subsystem, severity, verdict, violations, and deadline.
-- [ ] Validate that generated text cannot replace the canonical verdict/violations stored by Python.
-- [ ] Evaluate each draft using a separate model call with structured feedback.
-- [ ] Feed evaluator comments to the next drafting round, stopping on pass or after three rounds.
-- [ ] Persist each version, feedback, and whether the latest draft passed quality review. If all three fail, set status `failed` and block approval.
+- [x] Draft a concise briefing with anomaly summary, subsystem, severity, verdict, violations, and deadline.
+- [x] Validate that generated text cannot replace the canonical verdict/violations stored by Python.
+- [x] Evaluate each draft using a separate model call with structured feedback.
+- [x] Feed evaluator comments to the next drafting round, stopping on pass or after three rounds.
+- [x] Persist each version, feedback, and whether the latest draft passed quality review. If all three fail, set status `failed` and block approval.
+
+**Implementation:** Strict structured drafts carry a summary and copies of canonical facts. Python renders the saved facts and all flagged findings into each briefing; any differing model fact forces rejection even when the evaluator reports a pass. The independent evaluator checks narrative accuracy and quality; this does not guarantee perfect model judgment. Each draft response and version, and each evaluation response and feedback, commit together. Invalid/refused/incomplete responses and timeouts fail explicitly, retaining available usage and prior versions. Interrupted evaluations preserve an unapproved draft; late responses cannot promote stale or terminated runs. Human approval and cost calculation remain separate features.
 
 **Done when:** A fake evaluator that fails twice and passes once produces exactly three rounds with feedback carried forward; an always-failing evaluator stops at three.
 

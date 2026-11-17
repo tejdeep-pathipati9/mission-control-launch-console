@@ -1,7 +1,8 @@
 # Mission Control
 
-Meridian Launch Services anomaly-report console. The backend foundation, classification, and
-concurrent note checks are implemented; briefing review and the frontend are upcoming milestones. This demo is not
+Meridian Launch Services anomaly-report console. The backend foundation, classification,
+concurrent note checks, and briefing review are implemented; human approval and the frontend are
+upcoming milestones. This demo is not
 certified launch software. Briefing approval will never authorize a launch or change a verdict.
 
 ## Start
@@ -30,8 +31,15 @@ Three separate model checks then run concurrently: prompt injection, missing det
 Each persists its own `clear`, `flagged`, or `error` result, reason, findings, and token trace as it
 finishes. A failed/unavailable check produces `failed` / `required_check_failed`; missing credentials
 never yield fabricated clean results. Completed findings survive interrupted processing.
-After successful checks, the run still stops at `failed` / `pipeline_not_implemented` because briefing
-generation/review is a later feature. Neither a model check nor a flagged finding authorizes launch.
+After successful checks, the model drafts a briefing and a separate model call evaluates it.
+Failed quality assessments feed the next revision, for at most three drafts/reviews. Each version,
+feedback, and call trace is saved. The application renders canonical facts and flagged findings;
+changed structured facts force a revision even if the evaluator returns a pass. Narrative quality
+still depends on the evaluator. No model output changes the stored verdict or violations.
+The first passing draft moves the report to `pending_review`, with no approval record. Three quality
+failures produce `quality_review_exhausted`; model-call failures produce `draft_failed` or
+`evaluation_failed`. Required-check errors prevent drafting. Neither a model check nor a flagged
+finding authorizes launch.
 
 The application uses one worker and a named volume for `/data/mission_control.db`.
 Stop it with `docker compose down`; records survive that command and container recreation.
@@ -52,14 +60,13 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 224 tests passed locally and in network-disabled Docker
-(`224 passed in 12.01s` in Docker); lint and formatting passed. Tests cover independent errors/timeouts, concurrent
-execution using coordinated calls, partial polling results, and process-crash recovery. Starting with
-`docker compose up --build --detach --wait` reached healthy status. Container recreation
-preserved saved reports and marked unfinished processing as `failed` / `interrupted`
-without changing verdicts or completed traces. Model behavior is verified through scripted fakes
-and mocked SDK HTTP. Injection fixtures test result handling and verdict protection; they do not
-measure live-model detection accuracy. No paid live-model calls are required by the tests.
+**Verification (November 17, 2026):** 265 tests passed locally and in network-disabled
+Docker; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
+Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
+model failures and missing usage, partial polling, and recovery after a real HTTP process crash
+while evaluation is blocked. Completed drafts, check findings, and deterministic verdicts survive
+interruption. Model behavior is tested with scripted fakes and mocked SDK HTTP; these tests do
+not measure live-model detection or narrative-review accuracy and require no paid model calls.
 
 See [the plan](PLAN.md) for milestones. The final start command will include the browser UI
 once the frontend stack is selected.
@@ -111,6 +118,11 @@ uv run --directory backend pytest -q
 Local data defaults to `backend/data/mission_control.db`. Set `MISSION_CONTROL_DB_PATH`
 in the environment to change it; see [.env.example](.env.example). The app does not
 automatically load `.env` files. Never point tests at your application database.
+
+The shared `.codex/hooks.json` guard blocks common credential reads and withholds recognized
+secrets from tool output. Review and trust it through Codex's hook controls before relying on it;
+committing the configuration does not activate trust. It is a guardrail, not OS-level isolation.
+Run its synthetic tests with `python3 -m unittest discover -s .codex/hooks -p 'test_*.py'`.
 
 Dependencies are locked in `backend/uv.lock`. Lint and formatting checks:
 
