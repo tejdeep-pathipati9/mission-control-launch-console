@@ -15,6 +15,7 @@ from app.schemas.checks import CHECK_TYPES
 from app.schemas.reports import ReportCreate
 from app.services.reports import create_report
 from app.services.safety_checks import evaluate_check, run_safety_checks
+from tests.briefing_fake import SuccessfulBriefingClient
 from tests.test_classification import response as classification_response
 from tests.test_persistence import serve
 
@@ -234,20 +235,23 @@ def test_pipeline_persists_all_checks_and_enforces_failure_state(tmp_path, paylo
             for kind in CHECK_TYPES
         },
     }
-    fake = FakeModelClient(scripts)
+    fake = SuccessfulBriefingClient(scripts)
     with TestClient(create_app(Settings(tmp_path / "reports.db"), model_client=fake)) as api:
         accepted = api.post("/api/reports", json={**payload, "wind_knots": 26}).json()
         detail = api.get(accepted["status_url"]).json()
         summary = api.get("/api/reports").json()[0]
     assert len(detail["checks"]) == 3
-    assert detail["status"] == "failed"
-    assert detail["current_run"]["failure_reason"] == (
-        "required_check_failed" if failed else "pipeline_not_implemented"
-    )
+    assert detail["status"] == ("failed" if failed else "pending_review")
+    assert detail["current_run"]["failure_reason"] == ("required_check_failed" if failed else None)
     assert detail["verdict"] == "no_go" and detail["severity"] == "high"
-    assert detail["approvals"] == detail["briefing_versions"] == []
+    assert detail["approvals"] == []
+    assert len(detail["briefing_versions"]) == (0 if failed else 1)
     assert detail["flags"] == summary["flags"]
-    assert {call.operation for call in fake.calls} == {"classification", *CHECK_TYPES}
+    assert {call.operation for call in fake.calls} == {
+        "classification",
+        *CHECK_TYPES,
+        *(() if failed else ("draft", "evaluation")),
+    }
     if failed is None:
         assert detail["flags"][0]["check_type"] == "injection"
         assert detail["current_run"]["total_input_tokens"] == 150
@@ -332,7 +336,7 @@ async def test_partial_usage_is_preserved_without_inventing_totals(database):
     ],
 )
 def test_injection_findings_stay_visible_without_overriding_the_verdict(tmp_path, payload, note):
-    fake = FakeModelClient(
+    fake = SuccessfulBriefingClient(
         {
             "classification": [classification_response()],
             "injection": [check_response("flagged")],
@@ -348,7 +352,8 @@ def test_injection_findings_stay_visible_without_overriding_the_verdict(tmp_path
     assert (
         next(row for row in detail["checks"] if row["check_type"] == "panic")["outcome"] == "clear"
     )
-    assert all(call.payload["note"] == note for call in fake.calls)
+    assert detail["status"] == "pending_review"
+    assert all(call.payload.get("report", call.payload)["note"] == note for call in fake.calls)
     assert detail["approvals"] == []
 
 

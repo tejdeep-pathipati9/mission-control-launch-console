@@ -5,6 +5,7 @@ import asyncio
 from app.db.models import CheckResult, TraceStep
 from app.llm.client import ModelResponse, TokenUsage
 from app.main import create_app
+from tests.briefing_fake import ReviewClient
 
 
 async def blocked_pipeline(database, report_id, run_id):
@@ -66,3 +67,13 @@ class PartiallyBlockedChecksClient:
 
 
 checks_app = create_app(model_client=PartiallyBlockedChecksClient())
+
+
+class BlockedReviewClient(ReviewClient):
+    async def generate(self, request):
+        if request.operation == "evaluation":
+            await asyncio.Event().wait()
+        return await super().generate(request)
+
+
+review_app = create_app(model_client=BlockedReviewClient())

@@ -51,7 +51,7 @@ def test_submit_poll_list_and_classification_fallback(client, payload):
     assert rule["started_at"].endswith("Z")
     assert rule["completed_at"] is not None
     assert client.get("/api/reports").json()[0]["id"] == detail["id"]
-    assert client.get("/api/health").json() == {"status": "ok", "stage": "concurrent_checks"}
+    assert client.get("/api/health").json() == {"status": "ok", "stage": "briefing_review"}
 
 
 def test_all_numeric_violations_are_valid_reports_and_force_high(client, payload):
