@@ -46,3 +46,13 @@ def report_page(report_id: str) -> FileResponse:
     if not valid_report_id(report_id):
         raise HTTPException(404, "Report page not found.")
     return html_page("report.html")
+
+
+@router.get("/director")
+def director_page() -> FileResponse:
+    return html_page("director.html")
+
+
+@router.get("/reports")
+def report_queue() -> RedirectResponse:
+    return RedirectResponse("/director", status_code=307)

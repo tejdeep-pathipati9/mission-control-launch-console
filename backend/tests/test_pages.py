@@ -21,7 +21,7 @@ class PageAssets(HTMLParser):
             self.assets.append(attrs["href"])
 
 
-@pytest.mark.parametrize("route", ["/", "/reports/7"])
+@pytest.mark.parametrize("route", ["/", "/reports/7", "/director"])
 def test_engineer_page_and_its_assets_ship_together_without_external_dependencies(client, route):
     page = client.get(route)
     assert page.status_code == 200
@@ -49,6 +49,13 @@ def test_submission_and_report_are_separate_pages_and_old_links_redirect(client)
     assert redirect.status_code == 307
     assert redirect.headers["location"] == "/reports/7"
     assert client.get("/api/reports").json() == []
+
+
+def test_reports_list_url_opens_the_director_queue(client):
+    response = client.get("/reports", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/director"
+    assert client.get("/reports").url.path == "/director"
 
 
 @pytest.mark.parametrize("report_id", ["0", "-1", "invalid", "9007199254740992"])

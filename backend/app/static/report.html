@@ -6,13 +6,14 @@
   <title>Report · Mission Control</title>
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/common.js" defer></script>
+  <script src="/assets/report-view.js" defer></script>
   <script src="/assets/report.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="/">Mission Control</a>
-    <span>Meridian Launch Services</span>
+    <nav aria-label="Main navigation"><a href="/">Submit report</a> · <a href="/director">Flight Director</a></nav>
   </header>
   <main id="main">
     <noscript><p>JavaScript is needed to load report details and follow processing status.</p></noscript>
@@ -22,7 +23,7 @@
         <a id="new-report" href="/">New report</a>
       </div>
       <p id="status-message" role="status" aria-live="polite">Loading report status…</p>
-      <p><a id="report-link" href="/">Link to this report</a></p>
+      <p><a id="report-link" href="/">Link to this report</a> · <a id="director-link" href="/director">Review in director console</a></p>
       <div id="poll-error" class="notice" role="alert" hidden>
         <p id="poll-error-message"></p>
         <button id="retry-status" type="button">Retry status</button>
