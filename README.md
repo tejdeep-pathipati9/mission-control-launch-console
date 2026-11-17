@@ -23,14 +23,17 @@ It polls every two seconds while processing and stops at a terminal state. If po
 **Retry status** fetches the saved report without another submission. **New report** links back
 to the input page. Existing `/?report={id}` bookmarks redirect to the new report page.
 
-Open [Flight Director](http://localhost:8000/director) to review the paginated report queue;
-`/reports` redirects there. Select a report to inspect its original input, findings, briefing history,
+Open [Reports](http://localhost:8000/reports) to review the paginated report queue.
+`/reports` is a page; old `/director` links redirect here and preserve the selected report.
+Select a report to inspect its original input, findings, briefing history,
 approval history, and a trace card for each processing step. Costs distinguish complete totals
 from known subtotals when usage or prices are unavailable. The queue refreshes every five seconds;
-selected processing reports poll every two seconds. `/director?report={id}` opens a specific report.
+selected processing reports poll every two seconds. `/reports?report={id}` opens a specific report for review.
 
 For approval, configure `DEMO_DIRECTOR_TOKEN` in your ignored runtime configuration, then enter it
-under **Director access → Connect**. Review the latest briefing and explicitly acknowledge every
+in the collapsed **Approval access** panel and choose **Sign in**. This approval access key is
+separate from the Foundry API key; it grants the server-owned Flight Director role.
+Review the latest briefing and explicitly acknowledge every
 flagged check and its findings before choosing **Approve briefing**. The token stays in page memory,
 is sent only to authenticated API endpoints, and is cleared on disconnect or page navigation.
 Processing, failed, unresolved-check, and already approved reports cannot be approved.
@@ -83,7 +86,7 @@ From the repository root:
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test command runs 52 JavaScript workflow checks in a build stage with networking disabled,
+The test command runs 53 JavaScript workflow checks in a build stage with networking disabled,
 then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
 runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
 serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
@@ -94,7 +97,7 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 427 Python tests and 52 JavaScript workflow checks passed
+**Verification (November 17, 2026):** 428 Python tests and 53 JavaScript workflow checks passed
 locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
@@ -111,11 +114,31 @@ responses, terminal states, authentication, flag acknowledgements, uncertain app
 rendering untrusted model text as text. Real-HTTP director tests approve flagged GO and NO-GO
 briefings, reject unauthorized and incomplete approvals, and retain the audit after restart.
 An isolated production-image Compose smoke test reached healthy status and served `/`,
-`/director`, report-link URLs, CSS/JS, API health, and `/docs` with HTTP 200. `/reports` returned a
-307 redirect to the console. Interactive browser/layout QA remains pending; the DOM fixture is not a visual test.
+`/reports`, report-link URLs, CSS/JS, API health, and `/docs` with HTTP 200. Old `/director` links
+return a 307 redirect that preserves the report selection. Clean runtime/test image builds passed.
+The production container retained the complete saved report after forced recreation. A separate
+fake-model container was killed during evaluation; the production image recovered its database as
+`failed` / `interrupted`, retaining the verdict, findings, draft, completed traces, and known costs.
+A coordinated HTTP test now also holds classification open until after `202` is received, then
+releases it and verifies completion at `pending_review` without model approval.
+
+A separate headless Chromium walkthrough submitted wind readings of 25 and 25.01 knots, reviewed
+the generated briefings, signed in, acknowledged the injection flag, and explicitly approved both.
+The verdicts stayed GO and NO-GO. Form, queue, report, and selected-review layouts passed at
+320, 390, 768, and 1440 pixels; desktop/mobile screenshots were inspected. No JavaScript errors
+were observed. Browser tooling was temporary and adds no application dependencies or build step.
+These checks used synthetic models and isolated databases, not live Foundry calls.
+
+Final test output:
+
+```text
+JavaScript: tests 53, pass 53, fail 0
+Python: 428 passed
+Compose app: Healthy; records unchanged after container recreation
+```
 
 See [the plan](PLAN.md) for milestones. The start command serves all three pages and the API.
-Final grading/demo verification is the next feature.
+Final delivery and browser workflow verification are complete; live model quality remains dependent on the configured deployment.
 
 ## API
 
@@ -123,8 +146,8 @@ Final grading/demo verification is the next feature.
 | --- | --- | --- |
 | `GET` | `/` | Engineer submission form; old `?report={id}` links redirect |
 | `GET` | `/reports/{id}` | Separate saved-report page with processing status and briefing |
-| `GET` | `/director` | Report queue, selected details, traces, costs, and human approval |
-| `GET` | `/reports` | Redirect to the director queue |
+| `GET` | `/reports` | Report queue, selected details, traces, costs, and human approval |
+| `GET` | `/director` | Legacy redirect to `/reports`, preserving a valid selected report |
 | `GET` | `/assets/*` | Local CSS/JavaScript files |
 | `POST` | `/api/reports` | Validate, persist the decision, schedule processing; return `202` |
 | `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |
@@ -155,7 +178,7 @@ permission. These map to fixed server-owned identities; request fields/headers c
 or approver name. `/api/auth/me` is a helper, not an assignment requirement. This demo has no account
 registration, password database, or OAuth integration.
 
-The console's **Connect** verifies the identity with `/api/auth/me`. Alternatively, use
+The console's **Sign in** verifies the identity with `/api/auth/me`. Alternatively, use
 **Authorize → DemoBearer** in `/docs` with the configured token. Approval requires this body,
 using IDs from the latest report detail:
 

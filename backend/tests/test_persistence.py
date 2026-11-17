@@ -167,3 +167,46 @@ def test_real_http_returns_202_while_pipeline_is_blocked_and_recovers_after_cras
         assert after["trace"][0] == before["trace"][0]
         assert after["trace"][-1]["status"] == "interrupted"
         assert after["trace"][-1]["completed_at"] is not None
+
+
+@pytest.mark.enable_socket
+@pytest.mark.allow_hosts(["127.0.0.1"])
+def test_real_http_202_precedes_model_completion_then_release_finishes_the_pipeline(
+    tmp_path, payload, monkeypatch
+):
+    release = tmp_path / "model.release"
+    monkeypatch.setenv("MISSION_CONTROL_TEST_RELEASE_PATH", str(release))
+    with serve(
+        "tests.live_app:released_app", tmp_path / "reports.db", tmp_path / "server.log"
+    ) as api:
+        response = api.post("/api/reports", json={**payload, "wind_knots": 25.001})
+        assert response.status_code == 202
+        assert response.json()["status"] == "processing"
+        status_url = response.json()["status_url"]
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not release.with_suffix(".entered").exists():
+            time.sleep(0.01)
+        assert release.with_suffix(".entered").exists()
+        assert not release.exists()  # The model cannot have returned before the 202.
+        blocked = api.get(status_url).json()
+        assert blocked["status"] == "processing"
+        assert blocked["latest_briefing"] is None and blocked["approvals"] == []
+        assert blocked["trace"][0]["status"] == "completed"
+        assert blocked["trace"][-1]["status"] == "processing"
+        release.touch()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            finished = api.get(status_url).json()
+            if finished["status"] != "processing":
+                break
+            time.sleep(0.02)
+        assert finished["status"] == "pending_review"
+        assert finished["verdict"] == blocked["verdict"] == "no_go"
+        assert finished["violations_json"] == blocked["violations_json"]
+        assert finished["severity"] == "high"
+        assert len(finished["checks"]) == 3
+        assert len(finished["briefing_versions"]) == 1
+        assert finished["latest_briefing"]["quality_passed"]
+        assert finished["approvals"] == []  # A model pass never approves the briefing.
+        assert all(step["status"] == "completed" for step in finished["trace"])
+        assert finished["costs"]["total_input_tokens"] > 0
