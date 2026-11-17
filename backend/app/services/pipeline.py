@@ -8,6 +8,7 @@ from app.db.database import Database
 from app.db.models import PipelineRun, Report, TraceStep, utc_now
 from app.llm.client import ModelClient
 from app.services.classification import classify_report
+from app.services.safety_checks import run_safety_checks
 
 logger = logging.getLogger(__name__)
 PipelineRunner = Callable[[Database, int, int], Awaitable[None]]
@@ -52,16 +53,28 @@ def fail_run(database: Database, report_id: int, run_id: int, reason: str, messa
         )
 
 
-def classification_pipeline(client: ModelClient | None, settings: Settings) -> PipelineRunner:
+def report_pipeline(client: ModelClient | None, settings: Settings) -> PipelineRunner:
     async def process(database: Database, report_id: int, run_id: int) -> None:
         await classify_report(database, report_id, run_id, client, settings)
-        # Later branches add required checks and review before making a report approvable.
+        checks_passed = await run_safety_checks(database, report_id, run_id, client, settings)
+        if checks_passed is None:
+            return
+        if not checks_passed:
+            fail_run(
+                database,
+                report_id,
+                run_id,
+                "required_check_failed",
+                "A required check could not be completed; inspect its error and trace.",
+            )
+            return
+        # A passing model check is not approval; the next branch adds briefing review.
         fail_run(
             database,
             report_id,
             run_id,
             "pipeline_not_implemented",
-            "Classification saved. Concurrent checks and briefing review are not implemented yet.",
+            "Classification and checks saved. Briefing generation/review is not implemented yet.",
         )
 
     return process

@@ -43,6 +43,12 @@ def test_schema_foreign_keys_and_constraints(client, application, payload):
     }
     with database.sessions() as session:
         assert session.scalar(text("PRAGMA foreign_keys")) == 1
+    # Submission now creates all three check rows. Use a fresh run to isolate constraints.
+    with database.sessions.begin() as session:
+        constraint_run = PipelineRun(report_id=1, status="failed")
+        session.add(constraint_run)
+        session.flush()
+        run_id = constraint_run.id
     with pytest.raises(IntegrityError), database.sessions.begin() as session:
         session.add(
             CheckResult(
@@ -51,19 +57,21 @@ def test_schema_foreign_keys_and_constraints(client, application, payload):
         )
     with pytest.raises(IntegrityError), database.sessions.begin() as session:
         session.add(
-            CheckResult(run_id=1, check_type="other", outcome="clear", reason="Invalid type")
+            CheckResult(run_id=run_id, check_type="other", outcome="clear", reason="Invalid type")
         )
     with pytest.raises(IntegrityError), database.sessions.begin() as session:
         session.add(
-            CheckResult(run_id=1, check_type="panic", outcome="unknown", reason="Bad outcome")
+            CheckResult(run_id=run_id, check_type="panic", outcome="unknown", reason="Bad outcome")
         )
     with database.sessions.begin() as session:
-        session.add(CheckResult(run_id=1, check_type="panic", outcome="clear", reason="First"))
-    with pytest.raises(IntegrityError), database.sessions.begin() as session:
-        session.add(CheckResult(run_id=1, check_type="panic", outcome="clear", reason="Duplicate"))
+        session.add(CheckResult(run_id=run_id, check_type="panic", outcome="clear", reason="First"))
     with pytest.raises(IntegrityError), database.sessions.begin() as session:
         session.add(
-            BriefingVersion(report_id=1, run_id=1, round_number=4, content="Too many rounds")
+            CheckResult(run_id=run_id, check_type="panic", outcome="clear", reason="Duplicate")
+        )
+    with pytest.raises(IntegrityError), database.sessions.begin() as session:
+        session.add(
+            BriefingVersion(report_id=1, run_id=run_id, round_number=4, content="Too many rounds")
         )
 
 

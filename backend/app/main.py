@@ -11,7 +11,7 @@ from app.config import Settings
 from app.db.database import Database
 from app.llm.client import ModelClient, ModelConfigurationError
 from app.llm.factory import create_model_client
-from app.services.pipeline import PipelineRunner, classification_pipeline
+from app.services.pipeline import PipelineRunner, report_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,7 @@ def create_app(
                 except ModelConfigurationError:
                     # API stays usable; each report records the explicit unknown/high fallback.
                     client = None
-            application.state.pipeline_runner = runner or classification_pipeline(
-                client, runtime_settings
-            )
+            application.state.pipeline_runner = runner or report_pipeline(client, runtime_settings)
             yield
         finally:
             try:

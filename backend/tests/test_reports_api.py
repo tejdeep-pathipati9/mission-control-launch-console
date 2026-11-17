@@ -25,16 +25,21 @@ def test_submit_poll_list_and_classification_fallback(client, payload):
         detail["created_at"]
     ) == timedelta(minutes=5)
     assert detail["status"] == "failed"
-    assert detail["current_run"]["failure_reason"] == "pipeline_not_implemented"
+    assert detail["current_run"]["failure_reason"] == "required_check_failed"
     assert detail["current_run"]["total_input_tokens"] == 0
     assert float(detail["current_run"]["total_cost_usd"]) == 0
     assert detail["current_run"]["cost_complete"] is True
-    assert detail["checks"] == detail["flags"] == detail["briefing_versions"] == []
+    assert len(detail["checks"]) == 3
+    assert all(check["outcome"] == "error" for check in detail["checks"])
+    assert detail["flags"] == detail["briefing_versions"] == []
     assert detail["latest_briefing"] is None
     assert detail["approvals"] == []
     assert [step["step_name"] for step in detail["trace"]] == [
         "launch_limits",
         "classification",
+        "injection",
+        "missing_details",
+        "panic",
         "pipeline",
     ]
     assert detail["trace"][1]["details_json"]["fallback_reason"] == "model_not_configured"
@@ -46,7 +51,7 @@ def test_submit_poll_list_and_classification_fallback(client, payload):
     assert rule["started_at"].endswith("Z")
     assert rule["completed_at"] is not None
     assert client.get("/api/reports").json()[0]["id"] == detail["id"]
-    assert client.get("/api/health").json() == {"status": "ok", "stage": "classification"}
+    assert client.get("/api/health").json() == {"status": "ok", "stage": "concurrent_checks"}
 
 
 def test_all_numeric_violations_are_valid_reports_and_force_high(client, payload):
@@ -68,8 +73,9 @@ def test_all_numeric_violations_are_valid_reports_and_force_high(client, payload
     assert (
         datetime.fromisoformat(detail["brief_by_at"]) - datetime.fromisoformat(detail["created_at"])
     ) == timedelta(minutes=5)
-    # Note checking is a later milestone; do not claim a fabricated clean check.
-    assert detail["checks"] == []
+    # Unavailable model checks must not be represented as clean results.
+    assert len(detail["checks"]) == 3
+    assert all(check["outcome"] == "error" for check in detail["checks"])
 
 
 @pytest.mark.parametrize("field", ["engineer_name", "station", "note"])
