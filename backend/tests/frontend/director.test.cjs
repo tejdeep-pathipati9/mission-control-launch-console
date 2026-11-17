@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 const { harness, sample } = require("./dom.cjs");
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const reply = (data) => ({ data });
+const token = "synthetic-director-token-" + "d".repeat(32);
+const identity = (role = "flight_director") => reply({ subject: `demo-${role}`, role, auth_mode: "local_demo" });
 
 function report(extra = {}) {
   const costs = { total_cost_usd: null, known_cost_usd: "0", cost_complete: false,
@@ -16,6 +18,31 @@ function report(extra = {}) {
     trace: [], approvals: [], ...extra,
   };
 }
+
+function ready(extra = {}) {
+  const latest = { id: 21, report_id: 7, run_id: 10, round_number: 1,
+    quality_passed: true, content: "Wind limit breached.", evaluator_feedback: { quality_passed: true } };
+  const checks = ["injection", "missing_details", "panic"].map((check_type, i) => ({
+    id: 101 + i, run_id: 10, check_type, outcome: i === 0 ? "flagged" : "clear",
+    reason: i === 0 ? "Review embedded instructions." : "No findings.",
+    details_json: { findings: i === 0 ? ["Suppression instruction."] : [], error_reason: null },
+  }));
+  return report({ checks, flags: checks.filter((check) => check.outcome === "flagged"),
+    latest_briefing: latest, briefing_versions: [latest], ...extra });
+}
+
+async function connect(ui, value = token) {
+  ui.el("director-token").value = value;
+  await ui.submitForm("director-auth");
+}
+
+function approved(data = ready()) {
+  return { ...data, status: "approved", approvals: [{ briefing_version_id: data.latest_briefing.id,
+    approved_by: "demo-flight-director", approved_at: "2026-11-17T20:03:00Z", acknowledged_flags_json: [101] }] };
+}
+
+const savedApproval = (version = 21) => reply({ report_id: 7, run_id: 10, status: "approved",
+  approval: { briefing_version_id: version } });
 
 test("empty queue loads without credentials or selecting/approving a report", async () => {
   const ui = harness([reply([])], "/director");
@@ -141,4 +168,165 @@ test("page navigation stops queue and detail polling", async () => {
   await flush();
   ui.windowEvents.pagehide();
   assert.equal(ui.timers.size, 0);
+});
+
+test("director approval requires explicit flags, sends only version IDs, and preserves NO-GO", async () => {
+  const data = ready();
+  const saved = approved(data);
+  const ui = harness([reply([data]), reply(data), identity(), savedApproval(), reply(saved), reply([saved])], "/director?report=7");
+  await flush();
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  await connect(ui);
+  assert.equal(ui.el("director-token").value, "");
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  ui.change("ack-check-101", true);
+  assert.equal(ui.el("approve-briefing").disabled, false);
+  await ui.submitForm("approval-form");
+  await flush();
+  const post = ui.requests.find((request) => request.options.method === "POST");
+  assert.equal(post.url, "/api/reports/7/approve");
+  assert.deepEqual(JSON.parse(post.options.body), { run_id: 10, briefing_version_id: 21, acknowledged_check_result_ids: [101] });
+  assert.equal(post.options.headers.Authorization, `Bearer ${token}`);
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  assert.equal(ui.el("verdict").textContent, "NO-GO");
+  assert.match(ui.el("approval-history").textContent, /demo-flight-director/);
+  assert.match(ui.el("approval-status").textContent, /already been approved/);
+  assert.ok(ui.requests.filter((request) => request.url.startsWith("/api/reports") && request.options.method !== "POST")
+    .every((request) => request.options.headers.Authorization === undefined));
+  assert.ok(!ui.el("auth-status").textContent.includes(token));
+  assert.ok(!ui.location.href.includes(token));
+});
+
+test("an authenticated engineer can inspect but cannot enable approval", async () => {
+  const ui = harness([reply([]), reply(ready()), identity("engineer")], "/director?report=7");
+  await flush();
+  await connect(ui);
+  ui.change("ack-check-101", true);
+  await ui.submitForm("approval-form");
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  assert.equal(ui.el("ack-check-101").disabled, true);
+  assert.match(ui.el("auth-status").textContent, /Flight Director access is required/);
+  assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 0);
+});
+
+for (const scenario of ["processing", "failed", "quality_failed", "malformed_check", "missing_check", "stale_version"]) {
+  test(`${scenario} cannot be approved even with a director identity`, async () => {
+    const data = ready();
+    if (["processing", "failed"].includes(scenario)) data.status = scenario;
+    if (scenario === "quality_failed") data.latest_briefing.quality_passed = false;
+    if (scenario === "malformed_check") data.checks[0].details_json.error_reason = "invalid_output";
+    if (scenario === "missing_check") data.checks.pop();
+    if (scenario === "stale_version") data.latest_briefing.run_id = 9;
+    const ui = harness([reply([]), reply(data), identity()], "/director?report=7");
+    await flush();
+    await connect(ui);
+    ui.change("ack-check-101", true);
+    await ui.submitForm("approval-form");
+    assert.equal(ui.el("approve-briefing").disabled, true);
+    assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 0);
+  });
+}
+
+test("all flags must be checked and can be unchecked before approval", async () => {
+  const data = ready();
+  data.checks[1].outcome = "flagged";
+  data.checks[1].details_json.findings = ["Missing observation time."];
+  const ui = harness([reply([]), reply(data), identity()], "/director?report=7");
+  await flush();
+  await connect(ui);
+  ui.change("ack-check-101", true);
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  ui.change("ack-check-102", true);
+  assert.equal(ui.el("approve-briefing").disabled, false);
+  ui.change("ack-check-101", false);
+  assert.equal(ui.el("approve-briefing").disabled, true);
+});
+
+test("a report with no flags needs no fabricated acknowledgement IDs", async () => {
+  const data = ready();
+  data.checks[0].outcome = "clear";
+  data.checks[0].details_json.findings = [];
+  const ui = harness([reply([]), reply(data), identity(), savedApproval(), reply(approved(data)), reply([])], "/director?report=7");
+  await flush();
+  await connect(ui);
+  assert.equal(ui.el("approve-briefing").disabled, false);
+  await ui.submitForm("approval-form");
+  assert.deepEqual(JSON.parse(ui.requests.find((request) => request.options.method === "POST").options.body).acknowledged_check_result_ids, []);
+});
+
+test("a stale-approval conflict reloads the report and requires new acknowledgements", async () => {
+  const revised = ready();
+  revised.latest_briefing.id = 22;
+  const ui = harness([reply([]), reply(ready()), identity(),
+    { status: 409, data: { detail: { code: "stale_briefing" } } }, reply(revised), reply([])], "/director?report=7");
+  await flush();
+  await connect(ui);
+  ui.change("ack-check-101", true);
+  await ui.submitForm("approval-form");
+  assert.equal(ui.el("ack-check-101").checked, false);
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  assert.match(ui.el("approval-message").textContent, /report changed/);
+  assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 1);
+});
+
+test("an uncertain save is checked with GET and never automatically posted again", async () => {
+  const ui = harness([reply([]), reply(ready()), identity(), new Error("Connection lost"), reply(approved()), reply([])], "/director?report=7");
+  await flush();
+  await connect(ui);
+  ui.change("ack-check-101", true);
+  await ui.submitForm("approval-form");
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  assert.match(ui.el("approval-status").textContent, /already been approved/);
+  assert.match(ui.el("approval-message").textContent, /could not be confirmed/);
+  assert.equal(ui.requests.filter((request) => request.options.method === "POST").length, 1);
+});
+
+test("failed refresh makes an otherwise eligible briefing unapprovable", async () => {
+  const data = ready();
+  data.checks[0].outcome = "clear";
+  const ui = harness([reply([]), reply(data), identity(), new Error("offline")], "/director?report=7");
+  await flush();
+  await connect(ui);
+  assert.equal(ui.el("approve-briefing").disabled, false);
+  ui.click("refresh-report");
+  await flush();
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  assert.match(ui.el("approval-status").textContent, /Refresh this report/);
+});
+
+test("authentication failure clears entered credentials and cannot grant a role", async () => {
+  const ui = harness([reply([]), reply(ready()), { status: 401, data: { detail: "Invalid" } }], "/director?report=7");
+  await flush();
+  await connect(ui);
+  assert.equal(ui.el("director-token").value, "");
+  assert.match(ui.el("auth-status").textContent, /Could not verify/);
+  assert.equal(ui.el("approve-briefing").disabled, true);
+});
+
+test("disconnect invalidates a late identity response and clears acknowledgements", async () => {
+  let finish;
+  const ui = harness([reply([]), reply(ready()), () => new Promise((resolve) => { finish = resolve; })], "/director?report=7");
+  await flush();
+  const pending = connect(ui);
+  ui.click("disconnect-director");
+  finish({ ok: true, json: async () => ({ subject: "demo-flight-director", role: "flight_director" }) });
+  await pending;
+  assert.match(ui.el("auth-status").textContent, /Not connected/);
+  assert.equal(ui.el("approve-briefing").disabled, true);
+});
+
+test("returning through browser history requires authentication again", async () => {
+  const data = ready();
+  data.checks[0].outcome = "clear";
+  const ui = harness([reply([]), reply(data), identity(), reply([]), reply(data)], "/director?report=7");
+  await flush();
+  await connect(ui);
+  assert.equal(ui.el("approve-briefing").disabled, false);
+  ui.windowEvents.pagehide();
+  ui.windowEvents.pageshow({ persisted: true });
+  await flush();
+  assert.equal(ui.el("approve-briefing").disabled, true);
+  assert.match(ui.el("auth-status").textContent, /Not connected/);
+  assert.equal(ui.el("director-token").value, "");
+  assert.equal(ui.requests.filter((request) => request.url === "/api/auth/me").length, 1);
 });

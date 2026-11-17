@@ -19,6 +19,20 @@
     <h1>Flight Director console</h1>
     <p>Review reports, inspect their processing history, and approve a briefing.</p>
     <noscript><p>JavaScript is needed to load the queue and review reports.</p></noscript>
+    <section aria-labelledby="auth-heading">
+      <h2 id="auth-heading">Director access</h2>
+      <p>Connect with your configured local demo token to approve briefings.</p>
+      <form id="director-auth" method="post" novalidate>
+        <div class="auth-controls">
+          <div class="field"><label for="director-token">Demo token</label>
+            <input id="director-token" type="password" required minlength="32" maxlength="256" autocomplete="off" disabled>
+          </div>
+          <button id="connect-director" type="submit" disabled>Connect</button>
+          <button id="disconnect-director" type="button" disabled>Disconnect</button>
+        </div>
+        <p id="auth-status" role="status" aria-live="polite">Not connected. Tokens are kept only while this page is open.</p>
+      </form>
+    </section>
     <section aria-labelledby="queue-heading">
       <div class="section-heading"><h2 id="queue-heading">Report queue</h2><button id="refresh-queue" type="button">Refresh queue</button></div>
       <p id="queue-status" role="status" aria-live="polite">Loading reports…</p>
@@ -69,6 +83,15 @@
         <h2>Checks and review findings</h2>
         <p id="checks-summary"></p>
         <div id="check-cards"></div>
+        <form id="approval-form" method="post">
+          <fieldset>
+            <legend>Human briefing approval</legend>
+            <p>Approval covers this briefing only. It does not authorize launch or change the launch verdict.</p>
+            <p id="approval-status" role="status" aria-live="polite"></p>
+            <button id="approve-briefing" type="submit" disabled>Approve briefing</button>
+          </fieldset>
+        </form>
+        <p id="approval-message" class="notice" role="alert" hidden></p>
         <section id="briefing" aria-labelledby="briefing-heading" hidden>
           <h2 id="briefing-heading">Latest briefing</h2>
           <p id="briefing-quality"></p>
