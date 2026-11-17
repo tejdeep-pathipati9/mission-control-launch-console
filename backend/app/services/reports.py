@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ from app.schemas.reports import (
     ApprovalRead,
     BriefingRead,
     CheckRead,
+    ReportCosts,
     ReportCreate,
     ReportDetail,
     ReportSummary,
@@ -56,13 +59,49 @@ def create_report(session: Session, payload: ReportCreate) -> tuple[int, int]:
     return report.id, run.id
 
 
-def summarize_report(session: Session, report: Report) -> ReportSummary:
-    run = session.scalars(
-        select(PipelineRun)
-        .where(PipelineRun.report_id == report.id)
-        .order_by(PipelineRun.id.desc())
-        .limit(1)
-    ).one()
+def read_runs(session: Session, report_id: int) -> list[RunRead]:
+    runs = list(
+        session.scalars(
+            select(PipelineRun).where(PipelineRun.report_id == report_id).order_by(PipelineRun.id)
+        )
+    )
+    subtotals = {run.id: Decimal(0) for run in runs}
+    for run_id, cost in session.execute(
+        select(TraceStep.run_id, TraceStep.cost_usd)
+        .join(PipelineRun, TraceStep.run_id == PipelineRun.id)
+        .where(PipelineRun.report_id == report_id, TraceStep.cost_usd.is_not(None))
+    ):
+        subtotals[run_id] += cost
+    return [
+        RunRead(
+            **{
+                field: getattr(run, field)
+                for field in RunRead.model_fields
+                if field != "known_cost_usd"
+            },
+            known_cost_usd=subtotals[run.id],
+        )
+        for run in runs
+    ]
+
+
+def report_costs(runs: list[RunRead]) -> ReportCosts:
+    totals = {}
+    for field in ("total_input_tokens", "total_output_tokens", "total_cost_usd"):
+        values = [getattr(run, field) for run in runs]
+        totals[field] = sum(values) if all(value is not None for value in values) else None
+    return ReportCosts(
+        **totals,
+        known_cost_usd=sum((run.known_cost_usd for run in runs), Decimal(0)),
+        cost_complete=bool(runs) and all(run.cost_complete for run in runs),
+    )
+
+
+def summarize_report(
+    session: Session, report: Report, runs: list[RunRead] | None = None
+) -> ReportSummary:
+    runs = read_runs(session, report.id) if runs is None else runs
+    run = runs[-1]
     flags = session.scalars(
         select(CheckResult)
         .where(CheckResult.run_id == run.id, CheckResult.outcome == "flagged")
@@ -71,17 +110,19 @@ def summarize_report(session: Session, report: Report) -> ReportSummary:
     values = {
         field: getattr(report, field)
         for field in ReportSummary.model_fields
-        if field not in {"current_run", "flags"}
+        if field not in {"current_run", "flags", "costs"}
     }
     return ReportSummary(
         **values,
-        current_run=RunRead.model_validate(run),
+        current_run=run,
+        costs=report_costs(runs),
         flags=[CheckRead.model_validate(flag) for flag in flags],
     )
 
 
 def describe_report(session: Session, report: Report) -> ReportDetail:
-    summary = summarize_report(session, report)
+    runs = read_runs(session, report.id)
+    summary = summarize_report(session, report, runs)
     run_id = summary.current_run.id
     checks = session.scalars(
         select(CheckResult).where(CheckResult.run_id == run_id).order_by(CheckResult.id)
@@ -100,9 +141,6 @@ def describe_report(session: Session, report: Report) -> ReportDetail:
     approvals = session.scalars(
         select(Approval).where(Approval.report_id == report.id).order_by(Approval.id)
     )
-    runs = session.scalars(
-        select(PipelineRun).where(PipelineRun.report_id == report.id).order_by(PipelineRun.id)
-    )
     return ReportDetail(
         **summary.model_dump(),
         wind_knots=report.wind_knots,
@@ -114,5 +152,5 @@ def describe_report(session: Session, report: Report) -> ReportDetail:
         briefing_versions=versions,
         latest_briefing=versions[-1] if versions else None,
         approvals=[ApprovalRead.model_validate(approval) for approval in approvals],
-        pipeline_runs=[RunRead.model_validate(run) for run in runs],
+        pipeline_runs=runs,
     )

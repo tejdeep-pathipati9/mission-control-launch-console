@@ -245,7 +245,10 @@ async def test_completed_openai_adapter_response_records_actual_snapshot_and_pri
             assert trace.details_json["pricing"]["output_usd_per_million"] == "4.50"
             assert trace.details_json["model"] == DEFAULT_MODEL
             assert session.get(PipelineRun, run_id).model_name == DEFAULT_MODEL
-            assert trace.cost_usd is None
+            assert trace.cost_usd == Decimal("0.0000345000")
+            assert trace.details_json["cost_status"] == "calculated"
+            assert session.get(PipelineRun, run_id).total_cost_usd == trace.cost_usd
+            assert session.get(PipelineRun, run_id).cost_complete is False  # Still processing.
     finally:
         await client.aclose()
         database.close()

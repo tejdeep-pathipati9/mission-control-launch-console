@@ -15,7 +15,7 @@ from app.schemas.checks import (
     MissingDetailsFinding,
     PanicFinding,
 )
-from app.services.trace import refresh_totals
+from app.services.trace import record_model_accounting, refresh_totals
 
 SCHEMAS = {
     "injection": InjectionFinding,
@@ -167,7 +167,6 @@ async def run_safety_checks(
             if run.status != "processing":
                 return result  # Never rewrite a terminated run after cancellation/recovery.
             response = result.response
-            usage = response.usage if response else None
             no_call = client is None
             session.add(
                 CheckResult(
@@ -185,9 +184,7 @@ async def run_safety_checks(
             step.status = "failed" if result.outcome == "error" else "completed"
             step.started_at = started_at
             step.completed_at = utc_now()
-            step.input_tokens = usage.input_tokens if usage else (0 if no_call else None)
-            step.output_tokens = usage.output_tokens if usage else (0 if no_call else None)
-            step.cost_usd = 0 if no_call else None
+
             step.details_json = {
                 "check_type": check_type,
                 "requested_model": requested_model,
@@ -201,15 +198,8 @@ async def run_safety_checks(
                 if response
                 else (result.error.request_id if result.error else None),
                 "http_status": result.error.status_code if result.error else None,
-                "usage": usage.model_dump() if usage else None,
-                "usage_status": "no_call"
-                if no_call
-                else ("reported" if usage and usage.complete else "unavailable_or_partial"),
-                "pricing": settings.pricing_for(response.model, response.provider)
-                if response and response.provider != "fake"
-                else None,
-                "cost_status": "no_call" if no_call else "not_calculated",
             }
+            record_model_accounting(step, response, settings, no_call=no_call)
             refresh_totals(session, run)
         return result
 

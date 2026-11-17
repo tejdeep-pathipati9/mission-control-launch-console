@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 Severity = Literal["high", "medium", "low"]
 Status = Literal["processing", "pending_review", "approved", "failed"]
@@ -53,6 +53,13 @@ class TraceRead(ORMRead):
     started_at: datetime
     completed_at: datetime | None
 
+    @computed_field
+    @property
+    def latency_ms(self) -> int | None:
+        if self.completed_at is None:
+            return None
+        return max(0, round((self.completed_at - self.started_at).total_seconds() * 1000))
+
 
 class BriefingRead(ORMRead):
     id: int
@@ -84,9 +91,20 @@ class RunRead(ORMRead):
     total_input_tokens: int | None
     total_output_tokens: int | None
     total_cost_usd: Decimal | None
+    known_cost_usd: Decimal
     cost_complete: bool
     started_at: datetime
     completed_at: datetime | None
+
+
+class ReportCosts(BaseModel):
+    """Totals across all processing attempts; known cost is a subtotal, not a full bill."""
+
+    total_input_tokens: int | None
+    total_output_tokens: int | None
+    total_cost_usd: Decimal | None
+    known_cost_usd: Decimal
+    cost_complete: bool
 
 
 class ReportSummary(ORMRead):
@@ -102,6 +120,7 @@ class ReportSummary(ORMRead):
     created_at: datetime
     updated_at: datetime
     current_run: RunRead
+    costs: ReportCosts
     flags: list[CheckRead]
 
 

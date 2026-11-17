@@ -10,6 +10,7 @@ from app.llm.client import ModelClient
 from app.services.briefings import review_briefing
 from app.services.classification import classify_report
 from app.services.safety_checks import run_safety_checks
+from app.services.trace import refresh_totals
 
 logger = logging.getLogger(__name__)
 PipelineRunner = Callable[[Database, int, int], Awaitable[None]]
@@ -38,7 +39,8 @@ def fail_run(database: Database, report_id: int, run_id: int, reason: str, messa
         ):
             step.status = "failed"
             step.completed_at = now
-            run.cost_complete = False
+            step.cost_usd = None
+            step.details_json = {**step.details_json, "cost_status": "usage_unavailable"}
         session.add(
             TraceStep(
                 run_id=run_id,
@@ -52,6 +54,7 @@ def fail_run(database: Database, report_id: int, run_id: int, reason: str, messa
                 completed_at=now,
             )
         )
+        refresh_totals(session, run)
 
 
 def report_pipeline(client: ModelClient | None, settings: Settings) -> PipelineRunner:
