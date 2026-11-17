@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.api.auth import router as auth_router
 from app.api.reports import router
 from app.config import Settings
 from app.db.database import Database
@@ -31,6 +32,7 @@ def create_app(
         try:
             database.initialize()
             application.state.database = database
+            application.state.settings = runtime_settings
             client = model_client
             if runner is None and client is None:
                 try:
@@ -49,6 +51,7 @@ def create_app(
 
     application = FastAPI(title="Mission Control", version="0.1.0", lifespan=lifespan)
     application.include_router(router)
+    application.include_router(auth_router)
 
     @application.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):

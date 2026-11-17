@@ -10,6 +10,8 @@ def no_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_FOUNDRY_API_KEY", raising=False)
+    monkeypatch.delenv("DEMO_DIRECTOR_TOKEN", raising=False)
+    monkeypatch.delenv("DEMO_ENGINEER_TOKEN", raising=False)
 
 
 @pytest.fixture

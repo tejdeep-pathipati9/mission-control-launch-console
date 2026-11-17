@@ -42,8 +42,25 @@ class Settings:
     foundry_cache_write_1h_usd_per_million: Decimal | None = None
     anthropic_cache_write_5m_usd_per_million: Decimal | None = None
     anthropic_cache_write_1h_usd_per_million: Decimal | None = None
+    demo_director_token: str | None = field(default=None, repr=False)
+    demo_engineer_token: str | None = field(default=None, repr=False)
 
     def __post_init__(self):
+        for name in ("demo_director_token", "demo_engineer_token"):
+            token = getattr(self, name)
+            if token is not None and (
+                not 32 <= len(token) <= 256
+                or not token.isascii()
+                or any(character.isspace() for character in token)
+            ):
+                raise ValueError(
+                    f"{name.upper()} must contain 32–256 ASCII characters without spaces"
+                )
+        if (
+            self.demo_director_token is not None
+            and self.demo_director_token == self.demo_engineer_token
+        ):
+            raise ValueError("Demo director and engineer tokens must be different")
         if not isfinite(self.model_timeout_seconds) or self.model_timeout_seconds <= 0:
             raise ValueError("MODEL_TIMEOUT_SECONDS must be positive and finite")
         if type(self.model_max_output_tokens) is not int or self.model_max_output_tokens <= 0:
@@ -144,6 +161,8 @@ class Settings:
             model_timeout_seconds=float(os.environ.get("MODEL_TIMEOUT_SECONDS", "30")),
             model_max_output_tokens=int(os.environ.get("MODEL_MAX_OUTPUT_TOKENS", "1024")),
             model_provider=os.environ.get("MODEL_PROVIDER", "foundry").strip().lower(),
+            demo_director_token=os.environ.get("DEMO_DIRECTOR_TOKEN", "").strip() or None,
+            demo_engineer_token=os.environ.get("DEMO_ENGINEER_TOKEN", "").strip() or None,
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", "").strip() or None,
             anthropic_model=os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL).strip()
             or None,

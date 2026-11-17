@@ -1,10 +1,22 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from sqlalchemy import select, text
 
+from app.auth import Principal, require_director
 from app.db.models import Report
+from app.schemas.approvals import ApprovalRequest, ApprovalResponse
 from app.schemas.reports import ReportAccepted, ReportCreate, ReportDetail, ReportSummary
+from app.services.approvals import ApprovalError, approve_briefing
 from app.services.pipeline import execute_pipeline, fail_run
 from app.services.reports import create_report, describe_report, summarize_report
 
@@ -57,3 +69,16 @@ def get_report(report_id: int, request: Request) -> ReportDetail:
         if report is None:
             raise HTTPException(404, "Report not found.")
         return describe_report(session, report)
+
+
+@router.post("/reports/{report_id}/approve", response_model=ApprovalResponse)
+def approve_report(
+    report_id: int,
+    payload: ApprovalRequest,
+    request: Request,
+    principal: Annotated[Principal, Depends(require_director)],
+) -> ApprovalResponse:
+    try:
+        return approve_briefing(request.app.state.database, report_id, payload, principal)
+    except ApprovalError as exc:
+        raise HTTPException(exc.status_code, {"code": exc.code, "message": exc.message}) from exc

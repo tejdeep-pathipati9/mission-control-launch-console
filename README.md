@@ -1,9 +1,8 @@
 # Mission Control
 
 Meridian Launch Services anomaly-report console. The backend foundation, classification,
-concurrent note checks, briefing review, and cost accounting are implemented; human approval and the frontend are
-upcoming milestones. This demo is not
-certified launch software. Briefing approval will never authorize a launch or change a verdict.
+concurrent note checks, briefing review, cost accounting, and human approval are implemented.
+The browser UI is the next milestone. This demo is not certified launch software. Briefing approval will never authorize a launch or change a verdict.
 
 ## Start
 
@@ -60,7 +59,7 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 322 tests passed locally and in network-disabled
+**Verification (November 17, 2026):** 391 tests passed locally and in network-disabled
 Docker; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
@@ -69,7 +68,9 @@ interruption. Model behavior is tested with scripted fakes and mocked SDK HTTP; 
 not measure live-model detection or narrative-review accuracy and require no paid model calls.
 Accounting tests cover cache reads/writes, decimal rounding, billed failures, incomplete totals,
 multiple attempts, and saved prices across restart/configuration changes. The real Anthropic SDK
-also completes synthetic full-pipeline tests through a mocked HTTP transport.
+also completes synthetic full-pipeline tests through a mocked HTTP transport. Approval tests cover
+server-side permissions, GO/NO-GO preservation, exact flag acknowledgements, stale versions,
+restart persistence, audit-failure rollback, and coordinated concurrent requests with one winner.
 
 See [the plan](PLAN.md) for milestones. The final start command will include the browser UI
 once the frontend stack is selected.
@@ -82,6 +83,8 @@ once the frontend stack is selected.
 | `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |
 | `GET` | `/api/reports/{id}` | Report, current run, checks, trace, briefing history, approval history |
 | `GET` | `/api/health` | Check API and database connectivity |
+| `GET` | `/api/auth/me` | Inspect the authenticated local demo identity |
+| `POST` | `/api/reports/{id}/approve` | Director approves the current pending briefing with flag acknowledgements |
 
 `current_run` contains that attempt's token/cost totals and `known_cost_usd` subtotal. Report-level
 `costs` aggregates all attempts, including failed attempts; `pipeline_runs` retains each attempt's
@@ -97,7 +100,31 @@ decimal strings, rounded per step to ten decimal places before summing. OpenAI i
 hits; Claude's normalized input sums base, cache reads, and cache writes. Raw counters remain
 separate, following [Claude's usage accounting](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
 
-Approval is not implemented yet; classification runs through report submission. A `no_go` verdict is a valid stored
+Approval uses a small local demo bearer guard, an implementation choice for the assignment's
+server-side permission checks. Set a random `DEMO_DIRECTOR_TOKEN` (32–256 ASCII characters,
+no whitespace) in your ignored runtime configuration. There is no default director credential.
+The optional, distinct `DEMO_ENGINEER_TOKEN` demonstrates an authenticated role without approval
+permission. These map to fixed server-owned identities; request fields/headers cannot choose a role
+or approver name. `/api/auth/me` is a helper, not an assignment requirement. This demo has no account
+registration, password database, or OAuth integration.
+
+Use **Authorize → DemoBearer** in `/docs` with the configured token. Approval requires this body,
+using IDs from the latest report detail:
+
+```json
+{"run_id": 1, "briefing_version_id": 1, "acknowledged_check_result_ids": []}
+```
+
+Include exactly every flagged check's ID; use `[]` only when there are no flags. The server requires
+a completed current run, three error-free checks, and its latest quality-passed briefing. Missing or
+invalid authentication returns `401`, a non-director gets `403`, an unknown report gets `404`,
+state/version/acknowledgement conflicts get `409`, and malformed or forged fields get `422`.
+Approval and its audit record commit together; an audit failure rolls back the status change.
+The audit stores the authenticated identity, exact version, sorted acknowledged IDs, and UTC time.
+Only the report becomes `approved`; completed pipeline history, flags, costs, and launch verdict stay
+unchanged. A NO-GO briefing can be approved and still remains NO-GO.
+
+Classification runs through report submission. A `no_go` verdict is a valid stored
 report, not a validation failure. Malformed or non-finite readings, booleans/numeric strings,
 missing/blank required text, and unexpected fields receive clear `422` responses.
 
