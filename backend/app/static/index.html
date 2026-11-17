@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Report an anomaly · Mission Control</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/common.js" defer></script>
+  <script src="/assets/submission.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="/">Mission Control</a>
+    <span>Meridian Launch Services</span>
+  </header>
+  <main id="main">
+    <h1>Report an anomaly</h1>
+    <p>Submit the readings and what you observed. All fields are required. Your report will open on a separate page.</p>
+    <noscript><p>JavaScript is needed to submit a report. Its status and briefing open on a separate page.</p></noscript>
+
+    <section id="form-errors" class="notice" role="alert" tabindex="-1" hidden>
+      <h2>Check your report</h2>
+      <ul id="error-list"></ul>
+    </section>
+
+    <form id="report-form" novalidate method="post">
+      <fieldset id="report-fields">
+        <legend class="visually-hidden">Anomaly report</legend>
+        <div class="grid two-columns">
+          <div class="field">
+            <label for="engineer_name">Engineer name</label>
+            <input id="engineer_name" name="engineer_name" type="text" required maxlength="120"
+                   autocomplete="name" aria-describedby="engineer_name-error">
+            <p class="field-error" id="engineer_name-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="station">Station</label>
+            <input id="station" name="station" type="text" required maxlength="120"
+                   aria-describedby="station-error">
+            <p class="field-error" id="station-error" hidden></p>
+          </div>
+        </div>
+
+        <div class="grid three-columns">
+          <div class="field">
+            <label for="wind_knots">Wind (knots)</label>
+            <input id="wind_knots" name="wind_knots" type="number" required step="any" min="0"
+                   aria-describedby="wind-help wind_knots-error">
+            <p class="help" id="wind-help">Use a nonnegative reading. Launch limit: 25 knots or less.</p>
+            <p class="field-error" id="wind_knots-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="temp_c">Temperature (°C)</label>
+            <input id="temp_c" name="temp_c" type="number" required step="any" min="-273.15"
+                   aria-describedby="temp-help temp_c-error">
+            <p class="help" id="temp-help">Launch limit: 4°C or more.</p>
+            <p class="field-error" id="temp_c-error" hidden></p>
+          </div>
+          <div class="field">
+            <label for="fuel_pct">Fuel (%)</label>
+            <input id="fuel_pct" name="fuel_pct" type="number" required step="any" min="0"
+                   aria-describedby="fuel-help fuel_pct-error">
+            <p class="help" id="fuel-help">Launch limit: 98% to 100%, inclusive.</p>
+            <p class="field-error" id="fuel_pct-error" hidden></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="note">Anomaly note</label>
+          <textarea id="note" name="note" rows="5" required maxlength="10000"
+                    aria-describedby="note-help note-error"></textarea>
+          <p class="help" id="note-help">Describe the affected equipment, observation time, trend, and actions taken.</p>
+          <p class="field-error" id="note-error" hidden></p>
+        </div>
+        <p>Out-of-limit readings are accepted and produce a NO-GO verdict.</p>
+        <button id="submit-report" type="submit" disabled>Submit report</button>
+      </fieldset>
+    </form>
+
+  </main>
+  <footer>Mission Control · Assignment demonstration</footer>
+</body>
+</html>

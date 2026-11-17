@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Report · Mission Control</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/common.js" defer></script>
+  <script src="/assets/report.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="/">Mission Control</a>
+    <span>Meridian Launch Services</span>
+  </header>
+  <main id="main">
+    <noscript><p>JavaScript is needed to load report details and follow processing status.</p></noscript>
+    <section id="report-status" aria-labelledby="report-heading">
+      <div class="section-heading">
+        <h1 id="report-heading">Report status</h1>
+        <a id="new-report" href="/">New report</a>
+      </div>
+      <p id="status-message" role="status" aria-live="polite">Loading report status…</p>
+      <p><a id="report-link" href="/">Link to this report</a></p>
+      <div id="poll-error" class="notice" role="alert" hidden>
+        <p id="poll-error-message"></p>
+        <button id="retry-status" type="button">Retry status</button>
+      </div>
+      <div id="report-result" hidden>
+        <dl class="summary">
+          <div><dt>Launch verdict</dt><dd id="verdict"></dd></div>
+          <div><dt>Severity</dt><dd id="severity"></dd></div>
+          <div><dt>Subsystem</dt><dd id="subsystem"></dd></div>
+          <div><dt>Brief by</dt><dd><time id="brief-by"></time></dd></div>
+        </dl>
+        <p>Briefing approval does not authorize launch or change the launch verdict.</p>
+        <section aria-labelledby="original-heading">
+          <h2 id="original-heading">Original submission</h2>
+          <dl class="summary">
+            <div><dt>Engineer</dt><dd id="original-engineer_name"></dd></div>
+            <div><dt>Station</dt><dd id="original-station"></dd></div>
+            <div><dt>Wind (knots)</dt><dd id="original-wind_knots"></dd></div>
+            <div><dt>Temperature (°C)</dt><dd id="original-temp_c"></dd></div>
+            <div><dt>Fuel (%)</dt><dd id="original-fuel_pct"></dd></div>
+          </dl>
+          <h3>Anomaly note</h3>
+          <p id="original-note" class="note-content"></p>
+        </section>
+        <h2>Limit violations</h2>
+        <ul id="violations"></ul>
+        <h2>Checks and review findings</h2>
+        <p id="checks-summary"></p>
+        <ul id="findings"></ul>
+        <section id="briefing" aria-labelledby="briefing-heading" hidden>
+          <h2 id="briefing-heading">Latest briefing</h2>
+          <p id="briefing-quality"></p>
+          <pre id="briefing-content"></pre>
+        </section>
+      </div>
+    </section>
+  </main>
+  <footer>Mission Control · Assignment demonstration</footer>
+</body>
+</html>

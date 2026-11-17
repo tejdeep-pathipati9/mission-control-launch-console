@@ -4,9 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.auth import router as auth_router
+from app.api.pages import STATIC_DIRECTORY
+from app.api.pages import router as pages_router
 from app.api.reports import router
 from app.config import Settings
 from app.db.database import Database
@@ -52,6 +55,8 @@ def create_app(
     application = FastAPI(title="Mission Control", version="0.1.0", lifespan=lifespan)
     application.include_router(router)
     application.include_router(auth_router)
+    application.include_router(pages_router)
+    application.mount("/assets", StaticFiles(directory=STATIC_DIRECTORY / "assets"), name="assets")
 
     @application.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):

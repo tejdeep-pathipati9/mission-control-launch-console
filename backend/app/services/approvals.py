@@ -14,6 +14,7 @@ from app.db.models import (
 from app.schemas.approvals import ApprovalRequest, ApprovalResponse
 from app.schemas.checks import CHECK_TYPES
 from app.schemas.reports import ApprovalRead
+from app.services.check_results import check_completed
 
 
 class ApprovalError(Exception):
@@ -78,7 +79,7 @@ def approve_briefing(
         if (
             len(checks) != 3
             or {check.check_type for check in checks} != set(CHECK_TYPES)
-            or any(check.outcome not in {"clear", "flagged"} for check in checks)
+            or any(not check_completed(check) for check in checks)
         ):
             conflict("checks_incomplete", "All three required checks must complete without errors.")
 

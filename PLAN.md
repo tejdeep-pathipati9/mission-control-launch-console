@@ -4,7 +4,7 @@
 
 **Goal:** Engineers submit anomaly reports; a backend pipeline validates readings, classifies and checks the note, produces a reviewed briefing, and leaves the final briefing approval to the Flight Director.
 
-**Scope right now:** Backend, database, AI orchestration, containerization, tests, and API contracts. **Frontend technology is not selected yet.** The final delivery is a containerized full-stack application.
+**Scope right now:** Complete the browser workflow on the implemented backend. **Frontend: plain HTML, CSS, and small vanilla JavaScript files.** The final delivery is a containerized full-stack application.
 
 > This is an assignment/demo system, **not software certified for actual launch decisions**. A model's output must never override deterministic launch rules or approve a briefing.
 
@@ -22,29 +22,29 @@
 | Tests | pytest + pytest-asyncio + FastAPI TestClient/httpx | Fast, offline tests for API and pipeline behavior |
 | Package management | uv | Reproducible project setup without installing into system Python |
 | Packaging and startup | Docker + Docker Compose | One root-level command builds and starts the complete app, with persistent database storage |
-| Frontend | **TBD** | Defer framework and UI implementation until backend contracts work |
+| Frontend | Plain HTML + CSS + vanilla JavaScript | Small static pages; native forms and small scripts for API calls/polling; no framework or frontend build tool |
 
 **Not using for the MVP:** Django (extra full-stack framework features we do not need), PostgreSQL (additional local service), LangChain/LangGraph (unnecessary orchestration abstraction), or a background job queue (premature for the exercise). Reassess if scope expands.
 
 ### 1.1 Containerized delivery (DECIDED)
 
-- Root-level `compose.yaml`, `Dockerfile`, and `.dockerignore`; build context is the repository root so the image can include both `backend/` and the eventual frontend.
-- The default `app` service serves `/api/*` and the browser UI on `http://localhost:8000`. Prefer a frontend that can produce static assets, packaged into the app image and served by FastAPI. Add the frontend build stage after choosing its framework; if that choice requires a separate runtime, Compose must still start the complete app with the same command.
+- Root-level `compose.yaml`, `Dockerfile`, and `.dockerignore`; build context is the repository root; HTML/CSS/JavaScript will live in `backend/app/static/` and ship with the existing application copy.
+- The default `app` service serves `/api/*` and the browser UI on `http://localhost:8000`. FastAPI serves the submission and report pages with local CSS/JavaScript assets; the director console is the remaining page. No Node/npm runtime, React, bundler, CDN, frontend compilation, or separate frontend service is needed. A test-only Node stage executes the dependency-free JavaScript workflow checks with networking disabled; it is excluded from the runtime target. Compose must still start the complete app with the same command.
 - Install Python dependencies from `backend/pyproject.toml` and `backend/uv.lock` using a frozen lockfile. The runtime working directory is `/app/backend`, so `app.main:app` resolves correctly. Keep dependency/build tooling in build stages where practical; the runtime contains the application and its installed dependencies.
 - Run one Uvicorn worker, bound to `0.0.0.0:8000`, without auto-reload. The MVP uses one app container; do not scale it while interrupted-run recovery assumes exclusive ownership of processing jobs.
 - Mount a named volume, `mission_control_data`, at `/data`; use `/data/mission_control.db` for SQLite. Ensure the runtime user can write there. Rebuilding/recreating the app or running `docker compose down` must preserve records; `down --volumes` is a deliberate data reset and is excluded from ordinary startup/shutdown instructions.
 - Configure live credentials at runtime, never in image layers, frontend assets, or build arguments. Commit a root `.env.example` documenting configuration; exclude real `.env` files, credentials, databases, `.git`, and local virtual environments from the build context. A missing live API key is an explicit configuration error, never a silent switch to fake output.
-- A separate `tests` service under the `test` profile uses a test image target with test dependencies, a temporary database, an explicit fake `ModelClient`, no live API key, and `network_mode: none`. It must not mount the application data volume or depend on the running app. Include any eventual frontend tests in the same test entry point. [Compose profiles reference](https://docs.docker.com/compose/how-tos/profiles/).
-- Docker Engine/Desktop with Compose is the host prerequisite; Python, uv, and any frontend build tools run inside images. Initial image builds may download dependencies. The test process itself must run offline once the image is built.
+- A separate `tests` service under the `test` profile uses a test image target with test dependencies, a temporary database, an explicit fake `ModelClient`, no live API key, and `network_mode: none`. It must not mount the application data volume or depend on the running app. The same command builds a test-only Node stage for offline JavaScript workflow checks and runs the Python suite in the isolated test container. [Compose profiles reference](https://docs.docker.com/compose/how-tos/profiles/).
+- Docker Engine/Desktop with Compose is the host prerequisite; Python and uv run inside images; the static frontend requires no build tooling. Initial image builds may download dependencies. The test process itself must run offline once the image is built.
 
-**Delivery commands, run from the repository root (backend/test verified; frontend pending Milestone 7):**
+**Delivery commands, run from the repository root (API, engineer UI, and tests verified; director UI pending feature 8):**
 
 ```bash
 docker compose up --build
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The first command must eventually expose the complete browser workflow, not only API documentation. During backend milestones it starts the API; full-stack delivery is not complete until Milestone 7.
+The first command must eventually expose the complete browser workflow, not only API documentation. It now serves the API and engineer page; the full browser workflow remains incomplete until the director page is implemented.
 
 ## 2. Non-negotiable behavior
 
@@ -53,7 +53,7 @@ The first command must eventually expose the complete browser workflow, not only
    - `temp_c >= 4`
    - `98 <= fuel_pct <= 100`
    - Any violation produces `no_go`; otherwise `go`. Record **all** violations.
-2. **Bad input is rejected clearly.** Engineer name, station, and note are required; readings must be finite numeric values. Out-of-limit *numeric* readings are valid reports and must produce `no_go`, not a validation error.
+2. **Bad input is rejected clearly.** Engineer name, station, and note are required; readings must be finite numeric values with wind >= 0, temperature >= -273.15°C, and fuel >= 0%. These input sanity minima apply before persistence. Readings outside the launch limits remain valid and produce `no_go`, including fuel above 100%; no arbitrary upper bounds are introduced.
 3. **Severity controls deadline.** `high -> 5 min`, `medium -> 15 min`, `low -> 30 min`, measured from report creation. Any reading violation forces `high`, even if the classifier returns `low`.
 4. **Classification is structured and validated.** Use a fixed subsystem enum (e.g. `propulsion`, `avionics`, `weather`, `ground_systems`, `other`, `unknown`) and severity (`high`, `medium`, `low`). Invalid/unavailable classification safely becomes `unknown` / `high`; retain a trace of the fallback.
 5. **Three separate model checks run concurrently:** prompt-injection instructions, missing details, and panicked/alarmist tone. Keep their results distinct. Suspicious instructions must be flagged for human review and must not affect the verdict.
@@ -99,18 +99,18 @@ Engineer submits report
 | Condition | Report status | Can Flight Director approve? |
 | --- | --- | --- |
 | Pipeline still running | `processing` | **No** |
-| All three checks completed as `clear` or `flagged`; latest briefing passed evaluation | `pending_review` | **Yes**, after explicitly acknowledging every flagged finding |
+| All three checks completed successfully as `clear` or `flagged`, without an evaluation error; latest briefing passed evaluation | `pending_review` | **Yes**, after explicitly acknowledging every flagged finding |
 | Injection, missing-information, or panic check returns `flagged` but completes successfully | `pending_review` (assuming quality passes) | **Yes**, only with recorded acknowledgement; flag stays visible |
 | Any required check is missing, raises an error, times out, or has an invalid response | `failed` | **No**; do not treat failure as `clear` |
 | Drafting fails, evaluation call fails, or all three drafts fail quality review | `failed` | **No**; preserve drafts/feedback and failure reason |
 | Classification returns an invalid value or its call fails | Continue with fallback `unknown` / `high`; warning in trace | **Potentially**, once all required checks and quality review succeed |
 | Briefing already approved | `approved` | **No second approval** |
 
-**Important distinction:** `flagged` means a completed check found something worth human attention; `error` means the check did **not** complete reliably. A flagged note is reviewable, an unresolved check is not. A `no_go` report may still have its **briefing** approved; approval never turns it into `go` or authorizes launch.
+**Important distinction:** A successfully evaluated `flagged` check found something worth human attention; `error` means a check did not complete reliably. A malformed hidden-instructions reply also produces a visible `flagged` result, with `details_json.review_required = true` and a non-null `error_reason`. This fallback remains unresolved: fail the trace/run, block drafting and approval, and preserve the flag for review. Acknowledging it cannot turn an evaluation failure into a completed check. A `no_go` report may still have its **briefing** approved; approval never turns it into `go` or authorizes launch.
 
 **Failure policy:** Keep the report, code-derived verdict, completed check results, failed step, draft history, and trace even when processing fails. Save a machine-readable failure reason. Do not quietly use fake output after a live model failure. A reprocessing attempt (when implemented) must create a fresh `pipeline_run` and must not mutate historical runs or approvals.
 
-**Failure reasons:** At minimum distinguish `interrupted`, `scheduling_failed`, `required_check_failed`, `draft_failed`, `evaluation_failed`, and `quality_review_exhausted`. Classification fallback is a warning, not a failed run. If any required check errors, persist all three results and end the run as `failed` before drafting. A model review response that fails schema validation counts as `evaluation_failed`; a valid negative quality assessment consumes a round and supplies revision feedback.
+**Failure reasons:** At minimum distinguish `interrupted`, `scheduling_failed`, `required_check_failed`, `draft_failed`, `evaluation_failed`, and `quality_review_exhausted`. Classification fallback is a warning, not a failed run. If any required check errors (including a fail-safe injection flag with an evaluation-error marker), persist all three results and end the run as `failed` before drafting. A model review response that fails schema validation counts as `evaluation_failed`; a valid negative quality assessment consumes a round and supplies revision feedback.
 
 ## 4. Data model (initial schema)
 
@@ -125,7 +125,7 @@ Use **six tables** with foreign keys enabled and timestamps stored consistently 
 | `briefing_versions` | `id`, `report_id`, `run_id`, `round_number`, `content`, `evaluator_feedback`, `quality_passed`, `created_at` | Save all attempts and feedback; max three rounds per run |
 | `approvals` | `id`, `report_id`, `briefing_version_id`, `approved_by`, `acknowledged_flags_json`, `approved_at` | Audit the exact version approved and flagged check results acknowledged |
 
-**Check persistence:** Write all three `check_results` when the check stage completes, including errors. A completed check can be `clear` or `flagged`; if it cannot be evaluated, persist `error` rather than fabricating a pass. A crash can leave a subset of rows; restart recovery marks that run failed, and missing results never imply a clean check. Store human-readable reasons and optional structured details. The API can derive a summary of flags from these rows, but the rows—not report flags or trace JSON—are authoritative. Include the associated `run_id` in API results so retries cannot mix findings from different attempts.
+**Check persistence:** Write all three `check_results` when the check stage completes, including errors. A completed check can be `clear` or `flagged`; if it cannot be evaluated, persist `error` rather than fabricating a pass, except malformed injection replies, which persist a fail-safe `flagged` result with an explicit evaluation-error marker. A crash can leave a subset of rows; restart recovery marks that run failed, and missing results never imply a clean check. Store human-readable reasons and optional structured details. The API can derive a summary of flags from these rows, but the rows—not report flags or trace JSON—are authoritative. Include the associated `run_id` in API results so retries cannot mix findings from different attempts.
 
 **Statuses:** `processing`, `pending_review`, `approved`, `failed`. `failed` also has a machine-readable `pipeline_runs.failure_reason`. All briefings require an explicit human approval.
 
@@ -155,7 +155,7 @@ Keep pipeline logic in services, not inside FastAPI route functions. Do not rely
 
 ### 6.1 Feature branch roadmap
 
-Each branch delivers one focused change with its related tests and documentation. Create branches as work begins, in the order below; frontend branch names do not assume a framework.
+Each branch delivers one focused change with its related tests and documentation. Create branches as work begins, in the order below; frontend branches use the selected plain-HTML approach.
 
 | Order | Branch | Focus | Milestones |
 | --- | --- | --- | --- |
@@ -165,8 +165,8 @@ Each branch delivers one focused change with its related tests and documentation
 | 4 | `feature/briefing-review` | Shared credential guard/template, then briefing engine and API integration in separate commits. Generation, separate evaluation, feedback-driven revisions, three-round cap, version history, and transition to `pending_review` only when checks and quality pass. | 5 |
 | 5 | `feature/trace-costs` | Two focused commits: pricing/math/configuration, then pipeline/API accounting. Per-step costs, run/report totals, unknown-usage handling, saved pricing, and trace latency. | 6 — accounting |
 | 6 | `feature/director-approval` | Two focused commits: local demo bearer guard/configuration, then transactional approval/API tests. Current-version approval, flag acknowledgements, atomic audit, and duplicate/stale protection. | 6 — approval |
-| 7 | `feature/report-submission-ui` | Select the frontend stack; build the engineer form, validation messages, submission confirmation, and polling states; package the UI into Compose startup. | 7 — engineer workflow |
-| 8 | `feature/director-console` | Director report queue/detail views, verdicts/deadlines, findings, briefing versions, trace cards/costs, authenticated approval, and flag acknowledgement controls. | 7 — director workflow |
+| 7 | `feature/report-submission-ui` | Two focused commits: plain-HTML engineer page/static serving, then offline workflow tests and Docker verification. Validation, confirmation, saved links, polling/retry, and shared minimal styling. | 7 — engineer workflow |
+| 8 | `feature/director-console` | Build the second plain-HTML page: director queue and selected-report details together, verdicts/deadlines, findings, briefing history, trace cards/costs, authenticated approval, and flag acknowledgements. | 7 — director workflow |
 | 9 | `feature/final-verification` | Full-workflow integration fixes, complete-app Docker/offline-test verification, final README evidence, completed tool choices, and grading/demo checks. | 8 |
 
 **Branch workflow:**
@@ -256,22 +256,36 @@ Each branch delivers one focused change with its related tests and documentation
 
 **Done when:** The backend can show what happened, what it cost, and who approved, without any model being able to approve. Backend accounting and approval are complete; the browser workflow is next.
 
-### Milestone 7 — Frontend and final demonstration (**later; stack TBD**)
+### Milestone 7 — Frontend and final demonstration
 
-- [ ] Decide the frontend framework after reviewing working API responses.
-- [ ] Build engineer submission form with clear errors and a Flight Director report queue.
+- [x] Select plain HTML/CSS with minimal vanilla JavaScript for the small static-page UI.
+
+**UI decision:** Plain white background, black system-font text, simple borders, readable spacing, and native form/button controls. Keep the interface responsive and keyboard accessible. Use labels and text for status rather than relying on color. No component library, dashboard theme, charts, or decorative effects.
+
+1. **Engineer page (`/`):** Show the input form and validation errors. A successful submission navigates to its separate report page.
+2. **Report page (`/reports/{id}`):** Display the original submission, processing/result status, readings/verdict, violations, deadline, findings, and latest briefing. Keep polling and GET-only retry here. A New report link returns to the form. Existing `/?report={id}` links redirect here; refresh does not resubmit.
+3. **Flight Director page (`/director`):** Keep the report queue and selected-report detail on the same page. Display readings/verdict, violations, deadline, checks/flags, briefing versions, one trace card per step with tokens/cost, and explicit approval with flag acknowledgements. Put demo director access inline; no separate login page. Keep its entered token in memory and send it only on authenticated API requests.
+
+Use small local JavaScript files for `fetch`, form submission, selection, and two-second polling while processing. Render untrusted report/model text as text, not executable HTML. The pages and assets ship with the Python app; no frontend compilation or external asset downloads are required.
+
+- [x] Build the engineer form with field errors and redirect successful submissions to a separate saved-report page.
+- [ ] Build the Flight Director report queue and selected-report detail on the second page.
 - [ ] Display verdict, violations, severity, deadline, check flags, briefing versions, trace cards, token counts, and costs.
 - [ ] Add explicit human approval interaction through the protected API.
-- [ ] Poll report status, show failure reasons and provisional/unavailable fields clearly, and require explicit acknowledgement of every flagged finding before submission of approval.
-- [ ] Include the frontend in the default Compose startup and image build; verify `/api` and UI routes coexist and browser refresh works. Confirm a single root-level command starts the entire workflow.
+- [x] The report page polls while processing, stops at terminal states, shows failures/unavailable classification, and offers GET-only status retries. Duplicate submits and stale responses are guarded.
+- [ ] Director page displays provisional costs and requires explicit flag acknowledgement before approval.
+- [x] Package the engineer HTML/CSS/JS in the existing runtime image; verify UI/assets, report-link reload, `/api`, and `/docs` coexist. The isolated production-image smoke test reached healthy status.
+- [ ] Complete the director page so the root Compose command exposes the entire browser workflow.
 - [ ] Verify the full workflow, restart persistence, and usability.
+
+**Feature 7 evidence:** 423 Python tests plus 26 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; interactive browser/layout QA is still pending because browser access was unavailable.
 
 **Done when:** All information required by the rubric can be viewed and the approval performed from the browser.
 
 ### Milestone 8 — Documentation and grading verification
 
 - [ ] Write `README.md` with the root-level Docker Compose **one command to start the complete app** and **one command to run all tests**. Document Docker/Compose prerequisites, live-model credential setup, browser URL, and the difference between image-build network access and offline test execution.
-- [ ] Write `TOOL_CHOICES.md`: backend, frontend (once selected), database, and model—each with a specific reason, a rejected alternative, and a customer concern.
+- [ ] Write `TOOL_CHOICES.md`: backend, frontend, database, and model—each with a specific reason, a rejected alternative, and a customer concern.
 - [ ] Verify all tests work with `OPENAI_API_KEY` unset and network disabled.
 - [ ] Verify Compose configuration, clean image builds, app health, UI availability, and database persistence after container recreation. Separately interrupt an in-flight run, restart, and verify `failed`/`interrupted` with original verdict and completed history preserved. Record startup and test output as evidence; do not present target commands as verified until these checks pass.
 - [ ] Verify the real HTTP `202` response is delivered while a coordinated fake model remains blocked, then release the model and poll to completion. An in-process test client alone may wait for background tasks and is insufficient evidence of response timing.
@@ -295,7 +309,7 @@ mission-control/
 ├── README.md
 ├── TOOL_CHOICES.md
 ├── compose.yaml              # app + isolated tests profile; named data volume
-├── Dockerfile                # backend build, runtime, tests; frontend build added later
+├── Dockerfile                # backend runtime/tests; copies static UI with app code
 ├── .dockerignore
 ├── .env.example              # runtime configuration; no credentials
 ├── backend/
@@ -303,6 +317,16 @@ mission-control/
 │   ├── uv.lock
 │   ├── app/
 │   │   ├── main.py
+│   │   ├── static/            # planned plain HTML/CSS/JS assets
+│   │   │   ├── index.html
+│   │   │   ├── report.html
+│   │   │   ├── director.html   # feature 8
+│   │   │   └── assets/
+│   │   │       ├── styles.css
+│   │   │       ├── common.js
+│   │   │       ├── report.js
+│   │   │       ├── submission.js
+│   │   │       └── director.js # feature 8
 │   │   ├── api/
 │   │   │   ├── reports.py
 │   │   │   └── approvals.py
@@ -330,7 +354,6 @@ mission-control/
 │       ├── test_briefing_loop.py
 │       ├── test_approvals.py
 │       └── test_costs.py
-└── frontend/                  # later; framework undecided
 ```
 
 ## 8. Definition of done
@@ -348,4 +371,4 @@ mission-control/
 - [ ] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
 - [ ] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
 
-**Next coding task:** After `feature/director-approval` is merged, start `feature/report-submission-ui`: select the frontend stack and implement the engineer submission/polling workflow.
+**Next coding task:** After `feature/report-submission-ui` is merged, start `feature/director-console` for the second HTML page, report review, trace/cost cards, and human approval controls.

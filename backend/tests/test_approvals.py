@@ -190,6 +190,22 @@ def test_unresolved_processing_trace_blocks_approval(ready):
     unchanged(api, database, before)
 
 
+def test_a_fail_safe_flag_with_an_evaluation_error_cannot_be_acknowledged_into_approval(ready):
+    api, database, detail = ready
+    with database.sessions.begin() as session:
+        check = session.scalar(select(CheckResult).where(CheckResult.check_type == "injection"))
+        check.details_json = {
+            **check.details_json,
+            "error_reason": "invalid_output",
+            "review_required": True,
+        }
+    before = api.get(f"/api/reports/{detail['id']}").json()
+    response = approve(api, before)
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "checks_incomplete"
+    unchanged(api, database, before)
+
+
 @pytest.mark.parametrize("kind", CHECK_TYPES)
 @pytest.mark.parametrize("mode", ["missing", "error"])
 def test_missing_or_errored_required_check_blocks_approval(ready, kind, mode):

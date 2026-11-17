@@ -13,6 +13,7 @@ from app.llm.fake_client import FakeModelClient
 from app.main import create_app
 from app.schemas.checks import CHECK_TYPES
 from app.schemas.reports import ReportCreate
+from app.services.briefings import completed_checks
 from app.services.reports import create_report
 from app.services.safety_checks import evaluate_check, run_safety_checks
 from tests.briefing_fake import SuccessfulBriefingClient
@@ -73,13 +74,61 @@ async def test_independent_check_contracts_keep_note_out_of_instructions(kind, p
     ],
 )
 @pytest.mark.parametrize("kind", CHECK_TYPES)
-async def test_invalid_check_responses_are_errors_not_clean_findings(kind, text, payload):
+async def test_invalid_check_responses_never_clear_the_note(kind, text, payload):
     result = await evaluate_check(
         kind, payload, FakeModelClient({kind: [check_response(text=text)]}), 1
     )
-    assert result.outcome == "error"
+    assert result.outcome == ("flagged" if kind == "injection" else "error")
+    if kind == "injection":
+        assert result.findings and "human review" in result.reason
     assert result.error_reason == "invalid_output"
     assert result.response.usage.input_tokens == 10
+
+
+@pytest.mark.parametrize("text", ["not JSON", "", '{"outcome":"clear"}'])
+def test_malformed_injection_reply_is_a_persisted_review_flag_and_failed_check(
+    tmp_path, payload, text
+):
+    fake = FakeModelClient(
+        {
+            "classification": [classification_response()],
+            "injection": [check_response(text=text)],
+            "missing_details": [check_response()],
+            "panic": [check_response()],
+        }
+    )
+    settings = Settings(tmp_path / "reports.db")
+    with TestClient(create_app(settings, model_client=fake)) as api:
+        accepted = api.post("/api/reports", json={**payload, "wind_knots": 26}).json()
+        detail = api.get(accepted["status_url"]).json()
+        summary = api.get("/api/reports").json()[0]
+    injection = next(check for check in detail["checks"] if check["check_type"] == "injection")
+    assert injection["outcome"] == "flagged"
+    assert injection["details_json"]["review_required"] is True
+    assert injection["details_json"]["error_reason"] == "invalid_output"
+    assert injection["details_json"]["findings"]
+    assert "human review" in injection["reason"]
+    assert detail["flags"] == summary["flags"] == [injection]
+    assert detail["status"] == "failed"
+    assert detail["current_run"]["failure_reason"] == "required_check_failed"
+    assert detail["verdict"] == "no_go" and detail["severity"] == "high"
+    assert detail["briefing_versions"] == detail["approvals"] == []
+    step = next(step for step in detail["trace"] if step["step_name"] == "injection")
+    assert step["status"] == "failed" and step["input_tokens"] == 10
+    assert {call.operation for call in fake.calls} == {"classification", *CHECK_TYPES}
+    with TestClient(create_app(settings)) as api:
+        assert api.get(accepted["status_url"]).json()["flags"] == [injection]
+
+
+async def test_invalid_injection_response_envelope_also_requires_review(payload):
+    class InvalidClient:
+        async def generate(self, request):
+            return None
+
+    result = await evaluate_check("injection", payload, InvalidClient(), 1)
+    assert result.outcome == "flagged" and result.error_reason == "invalid_response"
+    assert result.findings and "human review" in result.reason
+    assert result.response is None
 
 
 @pytest.mark.parametrize("status", ["refused", "incomplete"])
@@ -285,6 +334,21 @@ async def test_completed_stage_is_not_run_twice_and_stale_run_is_ignored(databas
         session.add(PipelineRun(report_id=report_id))
     assert await run_safety_checks(db, report_id, run_id, fake, settings) is None
     assert len(fake.calls) == 3
+
+
+async def test_reloading_saved_fail_safe_flags_does_not_turn_them_into_completed_checks(database):
+    db, settings, report_id, run_id = database
+    fake = FakeModelClient(
+        {
+            kind: [check_response(text="not JSON")] if kind == "injection" else [check_response()]
+            for kind in CHECK_TYPES
+        }
+    )
+    assert await run_safety_checks(db, report_id, run_id, fake, settings) is False
+    assert await run_safety_checks(db, report_id, run_id, fake, settings) is False
+    assert len(fake.calls) == 3
+    with db.sessions() as session:
+        assert completed_checks(session, run_id) is None
 
 
 @pytest.mark.parametrize("mode", ["timeout", "exception"])

@@ -24,7 +24,15 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--worker
 FROM dependencies AS test-dependencies
 RUN uv sync --frozen --no-install-project
 
+FROM node:24-slim AS ui-checks
+WORKDIR /ui
+COPY backend/app/static ./static
+COPY backend/tests/frontend ./tests
+ENV UI_STATIC_DIR=/ui/static
+RUN --network=none node --test tests/*.test.cjs && touch /ui/passed
+
 FROM runtime AS tests
+COPY --from=ui-checks /ui/passed /tmp/ui-checks-passed
 COPY --from=test-dependencies /app/backend/.venv ./.venv
 COPY backend/pyproject.toml ./
 COPY backend/tests ./tests

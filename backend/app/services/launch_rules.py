@@ -4,6 +4,7 @@ from math import isfinite
 from typing import Literal
 
 Severity = Literal["high", "medium", "low"]
+MIN_TEMPERATURE_C = -273.15
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,12 @@ class LaunchDecision:
 def evaluate_launch_limits(wind_knots: float, temp_c: float, fuel_pct: float) -> LaunchDecision:
     if not all(isfinite(value) for value in (wind_knots, temp_c, fuel_pct)):
         raise ValueError("Launch readings must be finite")
+    if wind_knots < 0:
+        raise ValueError("Wind speed must be nonnegative")
+    if temp_c < MIN_TEMPERATURE_C:
+        raise ValueError("Temperature cannot be below absolute zero (-273.15°C)")
+    if fuel_pct < 0:
+        raise ValueError("Fuel percentage must be nonnegative")
     violations = []
     if wind_knots > 25:
         violations.append("wind_knots must be <= 25")

@@ -12,6 +12,7 @@ from app.db.models import BriefingVersion, CheckResult, PipelineRun, Report, Tra
 from app.llm.client import ModelClient, ModelClientError, ModelRequest, ModelResponse
 from app.schemas.briefings import BriefingDraft, BriefingEvaluation, BriefingFacts
 from app.schemas.checks import CHECK_TYPES
+from app.services.check_results import check_completed
 from app.services.trace import record_model_accounting, refresh_totals
 
 MAX_ROUNDS = 3
@@ -79,7 +80,7 @@ def completed_checks(session: Session, run_id: int) -> list[CheckResult] | None:
         )
     )
     if {row.check_type for row in checks} != set(CHECK_TYPES) or any(
-        row.outcome not in {"clear", "flagged"} for row in checks
+        not check_completed(row) for row in checks
     ):
         return None
     return checks

@@ -20,8 +20,8 @@ from app.services.launch_rules import (
         (25, 4, 100.001, "no_go"),
         (24.999, 4.001, 98.001, "go"),
         (0, 50, 99.999, "go"),
-        (-1, 4, 98, "go"),
-        (0, -20, -1, "no_go"),
+        (0, -20, 0, "no_go"),
+        (0, -273.15, 0, "no_go"),
     ],
 )
 def test_launch_limit_boundaries(wind, temp, fuel, verdict):
@@ -38,6 +38,12 @@ def test_all_violations_are_reported():
         "temp_c",
         "fuel_pct",
     ]
+
+
+@pytest.mark.parametrize("readings", [(-0.001, 4, 98), (0, -273.15001, 98), (0, 4, -0.001)])
+def test_impossible_readings_are_rejected_by_the_pure_rule_function(readings):
+    with pytest.raises(ValueError):
+        evaluate_launch_limits(*readings)
 
 
 @pytest.mark.parametrize("severity,minutes", [("high", 5), ("medium", 15), ("low", 30)])

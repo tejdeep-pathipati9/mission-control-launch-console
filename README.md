@@ -2,7 +2,10 @@
 
 Meridian Launch Services anomaly-report console. The backend foundation, classification,
 concurrent note checks, briefing review, cost accounting, and human approval are implemented.
-The browser UI is the next milestone. This demo is not certified launch software. Briefing approval will never authorize a launch or change a verdict.
+The engineer form and separate report page are implemented in plain HTML/CSS, with small
+JavaScript scripts for submission and polling. The Flight Director page is the next feature. Both use the agreed white background
+and black text. This demo is not certified launch software. Briefing approval never authorizes
+a launch or changes a verdict.
 
 ## Start
 
@@ -12,7 +15,15 @@ Install and start Docker Desktop, or Docker Engine with the Compose plugin. From
 docker compose up --build
 ```
 
-Open [API documentation](http://localhost:8000/docs) to submit a report and poll its result.
+Open [Mission Control](http://localhost:8000/) to submit an anomaly report. The form accepts
+readings outside launch limits and shows field errors. After submission it navigates to
+`/reports/{id}`, a separate page showing the original readings/note, verdict, violations, deadline,
+findings, and latest briefing. This page can be reopened directly or refreshed without resubmitting.
+It polls every two seconds while processing and stops at a terminal state. If polling fails,
+**Retry status** fetches the saved report without another submission. **New report** links back
+to the input page. Existing `/?report={id}` bookmarks redirect to the new report page. The director console and its navigation link arrive in feature 8.
+
+[API documentation](http://localhost:8000/docs) remains available.
 Health is available at [GET /api/health](http://localhost:8000/api/health).
 For live processing, copy `.env.example` to an ignored `.env` and set `ANTHROPIC_FOUNDRY_API_KEY`
 before starting Compose. Without a key, reports explicitly fall back to `unknown` / `high`;
@@ -39,6 +50,10 @@ The first passing draft moves the report to `pending_review`, with no approval r
 failures produce `quality_review_exhausted`; model-call failures produce `draft_failed` or
 `evaluation_failed`. Required-check errors prevent drafting. Neither a model check nor a flagged
 finding authorizes launch.
+Malformed hidden-instruction replies become visible `flagged` results with `review_required: true`
+and an `error_reason`. They are unresolved checks: their traces fail, drafting stops, and flag
+acknowledgement cannot make them approvable. Successfully evaluated flags remain reviewable under
+the normal human-approval rules.
 
 The application uses one worker and a named volume for `/data/mission_control.db`.
 Stop it with `docker compose down`; records survive that command and container recreation.
@@ -54,13 +69,19 @@ From the repository root:
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test container has networking disabled, no API key, and temporary databases. It never
+The test command runs 26 JavaScript workflow checks in a build stage with networking disabled,
+then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
+runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
+serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
+build cache when their files are unchanged.
+
+The test container has no API key and uses temporary databases. It never
 mounts the application data volume. Image builds may download dependencies; the test process
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 391 tests passed locally and in network-disabled
-Docker; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
+**Verification (November 17, 2026):** 423 Python tests and 26 JavaScript workflow checks passed
+locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
 while evaluation is blocked. Completed drafts, check findings, and deterministic verdicts survive
@@ -71,14 +92,21 @@ multiple attempts, and saved prices across restart/configuration changes. The re
 also completes synthetic full-pipeline tests through a mocked HTTP transport. Approval tests cover
 server-side permissions, GO/NO-GO preservation, exact flag acknowledgements, stale versions,
 restart persistence, audit-failure rollback, and coordinated concurrent requests with one winner.
+UI checks cover validation, duplicate submits, polling/retry, saved links, stale responses, terminal
+states, and rendering untrusted model text as text. An isolated production-image Compose smoke
+test reached healthy status and served `/`, report-link URLs, CSS/JS, API health, and `/docs`
+with HTTP 200. Interactive browser/layout QA remains pending; the DOM fixture is not a visual test.
 
-See [the plan](PLAN.md) for milestones. The final start command will include the browser UI
-once the frontend stack is selected.
+See [the plan](PLAN.md) for milestones. The start command now serves the engineer page and API;
+the full browser workflow still needs the director page from feature 8.
 
 ## API
 
 | Method | Path | Behavior |
 | --- | --- | --- |
+| `GET` | `/` | Engineer submission form; old `?report={id}` links redirect |
+| `GET` | `/reports/{id}` | Separate saved-report page with processing status and briefing |
+| `GET` | `/assets/*` | Local CSS/JavaScript files |
 | `POST` | `/api/reports` | Validate, persist the decision, schedule processing; return `202` |
 | `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |
 | `GET` | `/api/reports/{id}` | Report, current run, checks, trace, briefing history, approval history |
@@ -125,7 +153,10 @@ Only the report becomes `approved`; completed pipeline history, flags, costs, an
 unchanged. A NO-GO briefing can be approved and still remains NO-GO.
 
 Classification runs through report submission. A `no_go` verdict is a valid stored
-report, not a validation failure. Malformed or non-finite readings, booleans/numeric strings,
+report, not a validation failure. Input sanity minima are wind >= 0 knots, temperature >= -273.15°C,
+and fuel >= 0%; the API, pure rule function, and engineer form enforce them. No arbitrary upper
+bounds are added: wind above 25, temperature below 4 but above absolute zero, and fuel above 100
+remain accepted reports with `no_go`. Malformed or non-finite readings, booleans/numeric strings,
 missing/blank required text, and unexpected fields receive clear `422` responses.
 
 Example submission from another terminal:
