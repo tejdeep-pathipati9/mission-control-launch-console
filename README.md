@@ -42,8 +42,8 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 16, 2026):** 74 tests passed locally and in the network-disabled
-Docker test service without an API key (`74 passed in 2.38s` in Docker). Starting with
+**Verification (November 16, 2026):** 116 tests passed locally and in the network-disabled
+Docker test service without an API key (`116 passed in 2.86s` in Docker). Starting with
 `docker compose up --build --detach --wait` reached healthy status. Container recreation
 preserved saved reports and marked unfinished processing as `failed` / `interrupted`
 without changing verdicts or completed traces. Lint and formatting checks passed.
@@ -73,6 +73,13 @@ curl -i http://localhost:8000/api/reports \
 ```
 
 ## Backend development without Docker
+
+The reusable async model client, OpenAI adapter, and scripted test fake are implemented.
+Classification and pipeline integration are the next commit; submissions still use the
+explicit foundation scaffold described above. The adapter requires `OPENAI_API_KEY` and
+an explicitly selected `OPENAI_MODEL`, with `MODEL_TIMEOUT_SECONDS` (default 30) and
+`MODEL_MAX_OUTPUT_TOKENS` (default 1024). Missing live configuration raises a clear error;
+it never selects the fake automatically. No live model calls are needed for the tests.
 
 With uv and Python 3.12–3.14 installed, run these from the repository root:
 

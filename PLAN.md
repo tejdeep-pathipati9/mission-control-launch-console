@@ -201,8 +201,10 @@ Each branch delivers one focused change with its related tests and documentation
 
 ### Milestone 3 — Model interface and classification
 
-- [ ] Define one injectable async `ModelClient` interface used by **all** model operations.
-- [ ] Implement the OpenAI adapter and a deterministic fake adapter for tests.
+**Commit split:** Commit 1 adds the shared model interface, OpenAI adapter, scripted fake, configuration, and offline adapter tests. Commit 2 adds validated classification, fallback, pipeline integration, severity/deadline persistence, and usage traces. The current report pipeline stays on the explicit foundation scaffold until Commit 2.
+
+- [x] Define one injectable async `ModelClient` interface for **all** model operations; wire application services to it in Commit 2.
+- [x] Implement the OpenAI adapter and a deterministic fake adapter for tests, with bounded calls, explicit refusal/incomplete results, and reported usage metadata.
 - [ ] Define and validate structured subsystem/severity responses with Pydantic.
 - [ ] Fail safely on malformed output, unrecognized enum values, and call failures.
 - [ ] Connect classification to effective severity and persist its deadline from original report creation, using the tested Milestone 2 helpers.
