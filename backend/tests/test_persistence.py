@@ -94,6 +94,8 @@ def serve(module, database_path, log_path):
         port = reservation.getsockname()[1]
     environment = {**os.environ, "MISSION_CONTROL_DB_PATH": str(database_path)}
     environment.pop("OPENAI_API_KEY", None)
+    environment.pop("ANTHROPIC_API_KEY", None)
+    environment.pop("ANTHROPIC_FOUNDRY_API_KEY", None)
     with log_path.open("w+") as log:
         process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", module, "--host", "127.0.0.1", "--port", str(port)],

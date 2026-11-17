@@ -10,7 +10,7 @@ from app.api.reports import router
 from app.config import Settings
 from app.db.database import Database
 from app.llm.client import ModelClient, ModelConfigurationError
-from app.llm.openai_client import OpenAIModelClient
+from app.llm.factory import create_model_client
 from app.services.pipeline import PipelineRunner, classification_pipeline
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def create_app(
             client = model_client
             if runner is None and client is None:
                 try:
-                    owned_client = client = OpenAIModelClient(runtime_settings)
+                    owned_client = client = create_model_client(runtime_settings)
                 except ModelConfigurationError:
                     # API stays usable; each report records the explicit unknown/high fallback.
                     client = None

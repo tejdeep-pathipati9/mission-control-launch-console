@@ -17,7 +17,7 @@
 | Validation | Pydantic | Strong input and structured model-output schemas |
 | Database | SQLite | Persistent local storage with no separate database server |
 | ORM | SQLAlchemy 2.x | Explicit models, relationships, transactions, easy testing |
-| AI | OpenAI Python SDK behind a `ModelClient` interface | Structured model calls with a replaceable fake for tests |
+| AI | Claude Opus 5 through Microsoft Foundry behind `ModelClient`; optional direct adapters retained | User-selected provider, structured outputs, and a replaceable fake for offline tests |
 | Concurrency | `asyncio.gather()` | Run the three independent note checks concurrently |
 | Tests | pytest + pytest-asyncio + FastAPI TestClient/httpx | Fast, offline tests for API and pipeline behavior |
 | Package management | uv | Reproducible project setup without installing into system Python |
@@ -204,12 +204,14 @@ Each branch delivers one focused change with its related tests and documentation
 **Commit split (implemented):** Commit 1 adds the shared model interface, OpenAI adapter, scripted fake, configuration, and offline adapter tests. Commit 2 adds validated classification, fallback, pipeline integration, severity/deadline persistence, and usage traces. The pipeline stops explicitly before the required checks/review from later milestones.
 
 - [x] Define one injectable async `ModelClient` interface for **all** model operations and wire classification through it.
-- [x] Implement the OpenAI adapter and a deterministic fake adapter for tests, with bounded calls, explicit refusal/incomplete results, and reported usage metadata.
+- [x] Implement Anthropic/OpenAI adapters and a deterministic fake, with bounded calls, explicit refusal/incomplete results, and reported usage metadata.
 - [x] Define and validate structured subsystem/severity responses with Pydantic.
 - [x] Fail safely on malformed output, unrecognized enum values, and call failures.
 - [x] Connect classification to effective severity and persist its deadline from original report creation, using the tested Milestone 2 helpers.
 - [x] Record model usage for each completed call.
 - [x] Select `gpt-5.4-mini-2026-03-17` and document configurable pricing. Store the actual model identifier, applicable rates, and usage availability per model trace step. Keep uncalculated costs unavailable until the accounting branch. Adapter behavior is tested with mocked HTTP; live-model quality is not yet evaluated.
+
+**Provider update:** Claude Opus 5 now runs through Microsoft Foundry: `MODEL_PROVIDER=foundry`, `ANTHROPIC_FOUNDRY_API_KEY`, and either a Foundry resource name or `/anthropic/` base URL. `ANTHROPIC_MODEL` must match the deployment name. Foundry rates are deployment configuration, not inferred from direct Anthropic pricing. Optional direct adapters never act as automatic fallback.
 
 **Done when:** Invalid model classification falls back to `unknown`/`high` without affecting the verdict; tests require no key.
 

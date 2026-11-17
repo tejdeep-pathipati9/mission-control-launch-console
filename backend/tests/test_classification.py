@@ -299,7 +299,7 @@ def test_generic_client_timeout_and_unexpected_error_use_safe_fallback(tmp_path,
 
 def test_app_closes_only_the_client_it_constructs(tmp_path, payload, monkeypatch):
     fake = FakeModelClient({"classification": [response()]})
-    monkeypatch.setattr("app.main.OpenAIModelClient", lambda settings: fake)
+    monkeypatch.setattr("app.main.create_model_client", lambda settings: fake)
     with TestClient(create_app(Settings(tmp_path / "reports.db"))) as api:
         api.post("/api/reports", json=payload)
         assert not fake.closed

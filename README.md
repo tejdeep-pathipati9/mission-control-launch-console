@@ -14,7 +14,7 @@ docker compose up --build
 
 Open [API documentation](http://localhost:8000/docs) to submit a report and poll its result.
 Health is available at [GET /api/health](http://localhost:8000/api/health).
-For live classification, copy `.env.example` to an ignored `.env` and set `OPENAI_API_KEY`
+For live classification, copy `.env.example` to an ignored `.env` and set `ANTHROPIC_FOUNDRY_API_KEY`
 before starting Compose. Without a key, reports explicitly fall back to `unknown` / `high`;
 the API remains usable and no model calls are made. Tests always use injected fakes or mocked HTTP.
 
@@ -82,11 +82,16 @@ curl -i http://localhost:8000/api/reports \
 
 ## Backend development without Docker
 
-The default model is `gpt-5.4-mini-2026-03-17`, selected for structured classification with
-a versioned snapshot. Its documented standard rates are $0.75 input, $0.075 cached input,
-and $4.50 output per million tokens, verified November 16, 2026. [Model and pricing source](https://developers.openai.com/api/docs/models/gpt-5.4-mini).
-Override `OPENAI_MODEL` to use another supported model. To override its pricing, set all three
-`OPENAI_*_USD_PER_MILLION` values from `.env.example`; unknown models have no guessed prices.
+The selected provider is Microsoft Foundry (`MODEL_PROVIDER=foundry`) for Claude Opus 5.
+Set `ANTHROPIC_FOUNDRY_API_KEY` and either `ANTHROPIC_FOUNDRY_RESOURCE` or
+`ANTHROPIC_FOUNDRY_BASE_URL` (ending in `/anthropic/`). `ANTHROPIC_MODEL` is your Foundry
+deployment name; the template uses `claude-opus-5`, which must match the name you deployed.
+These are the [SDK's Foundry connection settings](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry).
+Set all three `FOUNDRY_*_USD_PER_MILLION` values from your deployment's pricing to record rates;
+direct Anthropic list prices are not assumed for Foundry. Cache usage remains separately identified.
+Direct Anthropic access remains optional with `MODEL_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`.
+The existing OpenAI adapter remains available with `MODEL_PROVIDER=openai`, `OPENAI_API_KEY`,
+and `OPENAI_MODEL`; providers never switch automatically after failures.
 `MODEL_TIMEOUT_SECONDS` defaults to 30 and `MODEL_MAX_OUTPUT_TOKENS` to 1024.
 The live adapter rejects missing configuration; the pipeline records that as a safe fallback
 without automatically selecting a fake.
