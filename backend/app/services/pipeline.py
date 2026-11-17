@@ -3,8 +3,11 @@ from collections.abc import Awaitable, Callable
 
 from sqlalchemy import select
 
+from app.config import Settings
 from app.db.database import Database
 from app.db.models import PipelineRun, Report, TraceStep, utc_now
+from app.llm.client import ModelClient
+from app.services.classification import classify_report
 
 logger = logging.getLogger(__name__)
 PipelineRunner = Callable[[Database, int, int], Awaitable[None]]
@@ -49,15 +52,19 @@ def fail_run(database: Database, report_id: int, run_id: int, reason: str, messa
         )
 
 
-async def foundation_pipeline(database: Database, report_id: int, run_id: int) -> None:
-    """Explicit scaffolding: never manufacture model checks or an approvable briefing."""
-    fail_run(
-        database,
-        report_id,
-        run_id,
-        "pipeline_not_implemented",
-        "Report and launch verdict saved. Model processing is not implemented in this milestone.",
-    )
+def classification_pipeline(client: ModelClient | None, settings: Settings) -> PipelineRunner:
+    async def process(database: Database, report_id: int, run_id: int) -> None:
+        await classify_report(database, report_id, run_id, client, settings)
+        # Later branches add required checks and review before making a report approvable.
+        fail_run(
+            database,
+            report_id,
+            run_id,
+            "pipeline_not_implemented",
+            "Classification saved. Concurrent checks and briefing review are not implemented yet.",
+        )
+
+    return process
 
 
 async def execute_pipeline(

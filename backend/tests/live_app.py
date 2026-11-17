@@ -27,3 +27,16 @@ async def blocked_pipeline(database, report_id, run_id):
 
 
 app = create_app(runner=blocked_pipeline)
+
+
+class BlockedModelClient:
+    model_name = "blocked-test-model"
+
+    async def generate(self, request):
+        await asyncio.Event().wait()
+
+    async def aclose(self):
+        pass
+
+
+classification_app = create_app(model_client=BlockedModelClient())

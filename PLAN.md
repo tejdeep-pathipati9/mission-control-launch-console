@@ -160,7 +160,7 @@ Each branch delivers one focused change with its related tests and documentation
 | Order | Branch | Focus | Milestones |
 | --- | --- | --- | --- |
 | 1 | `feature/backend-foundation` | FastAPI setup, report submission/polling, SQLite schema and persistence, deterministic launch rules/deadlines, Docker foundation, restart recovery. Already implemented and pushed. | 1–2 |
-| 2 | `feature/model-classification` | One replaceable `ModelClient`, OpenAI/fake adapters, model configuration, structured classification and fallback, effective severity/deadline persistence, model-call timeouts and usage traces. | 3 |
+| 2 | `feature/model-classification` | One replaceable `ModelClient`, OpenAI/fake adapters, model configuration, structured classification and fallback, effective severity/deadline persistence, model-call timeouts and usage traces. Implemented in two commits. | 3 |
 | 3 | `feature/concurrent-checks` | Injection, missing-details, and panic checks; concurrent execution; authoritative per-run check results; independent error handling and failure states. | 4 |
 | 4 | `feature/briefing-review` | Briefing generation, separate evaluation, feedback-driven revisions, three-round cap, version history, and transition to `pending_review` only when checks and quality pass. | 5 |
 | 5 | `feature/trace-costs` | Configured model pricing, per-step cost calculation, run/report totals, unknown-usage handling, and complete trace/cost API responses. | 6 — accounting |
@@ -186,7 +186,7 @@ Each branch delivers one focused change with its related tests and documentation
 - [x] Implement `POST /api/reports` returning `202`, and `GET /api/reports` / `GET /api/reports/{id}` for polling. Commit report, verdict, run, and rule trace atomically; wire background orchestration with fresh sessions, adding model stages in Milestones 3–5. Incomplete scaffolding must not publish an approvable briefing.
 - [x] Test `202` response contract, polling status, invalid input, database isolation, restart persistence, and marking interrupted runs `failed` on restart.
 
-**Implemented foundation behavior:** The current background scaffold records `failed` / `pipeline_not_implemented` after saving the report. No model calls, checks, briefing, or approval are fabricated. See the [README verification note](README.md#test).
+**Current behavior:** After report persistence, classification runs (or records an explicit configuration fallback). The run remains `failed` / `pipeline_not_implemented` until required checks and briefing review are implemented; no approvable briefing is fabricated. See the [README verification note](README.md#test).
 
 **Done when:** The backend starts in Docker, a submitted report survives container recreation, interrupted runs become failed, and bad inputs give useful 4xx responses.
 
@@ -194,22 +194,22 @@ Each branch delivers one focused change with its related tests and documentation
 
 - [x] Complete/verify pure `evaluate_launch_limits()` returning `go`/`no_go` and all violated limits, introduced in Milestone 1.
 - [x] Implement pure `resolve_severity()` and `calculate_brief_by()` functions.
-- [x] Store the computed verdict and violations; immediately store high severity/deadline for limit breaches. In-limit reports retain null severity/deadline until model classification is connected in Milestone 3.
+- [x] Store the computed verdict and violations; immediately store high severity/deadline for limit breaches. In-limit reports retain null severity/deadline while classification is pending.
 - [x] Test each inclusive boundary and just-outside value, combined violations, and severity override.
 
 **Done when:** No model code is involved in verdict calculation and boundary tests pass.
 
 ### Milestone 3 — Model interface and classification
 
-**Commit split:** Commit 1 adds the shared model interface, OpenAI adapter, scripted fake, configuration, and offline adapter tests. Commit 2 adds validated classification, fallback, pipeline integration, severity/deadline persistence, and usage traces. The current report pipeline stays on the explicit foundation scaffold until Commit 2.
+**Commit split (implemented):** Commit 1 adds the shared model interface, OpenAI adapter, scripted fake, configuration, and offline adapter tests. Commit 2 adds validated classification, fallback, pipeline integration, severity/deadline persistence, and usage traces. The pipeline stops explicitly before the required checks/review from later milestones.
 
-- [x] Define one injectable async `ModelClient` interface for **all** model operations; wire application services to it in Commit 2.
+- [x] Define one injectable async `ModelClient` interface for **all** model operations and wire classification through it.
 - [x] Implement the OpenAI adapter and a deterministic fake adapter for tests, with bounded calls, explicit refusal/incomplete results, and reported usage metadata.
-- [ ] Define and validate structured subsystem/severity responses with Pydantic.
-- [ ] Fail safely on malformed output, unrecognized enum values, and call failures.
-- [ ] Connect classification to effective severity and persist its deadline from original report creation, using the tested Milestone 2 helpers.
-- [ ] Record model usage for each completed call.
-- [ ] Select and document the exact model identifier and configured pricing before live-model acceptance. Store the actual model identifier, applicable input/output rates, and usage availability per model trace step so costs remain explainable after configuration changes. Do not invent rates or claim unknown cost is zero; expose known cost and whether the total is complete.
+- [x] Define and validate structured subsystem/severity responses with Pydantic.
+- [x] Fail safely on malformed output, unrecognized enum values, and call failures.
+- [x] Connect classification to effective severity and persist its deadline from original report creation, using the tested Milestone 2 helpers.
+- [x] Record model usage for each completed call.
+- [x] Select `gpt-5.4-mini-2026-03-17` and document configurable pricing. Store the actual model identifier, applicable rates, and usage availability per model trace step. Keep uncalculated costs unavailable until the accounting branch. Adapter behavior is tested with mocked HTTP; live-model quality is not yet evaluated.
 
 **Done when:** Invalid model classification falls back to `unknown`/`high` without affecting the verdict; tests require no key.
 
@@ -337,4 +337,4 @@ mission-control/
 - [ ] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
 - [ ] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
 
-**Next coding task:** After `feature/backend-foundation` is merged, start `feature/model-classification` for Milestone 3, then follow the branch roadmap above. Frontend selection remains deferred until `feature/report-submission-ui`.
+**Next coding task:** After `feature/model-classification` is merged, start `feature/concurrent-checks` for Milestone 4. Frontend selection remains deferred until `feature/report-submission-ui`.
