@@ -15,6 +15,7 @@ from app.schemas.checks import (
     MissingDetailsFinding,
     PanicFinding,
 )
+from app.services.check_results import check_completed
 from app.services.trace import record_model_accounting, refresh_totals
 
 SCHEMAS = {
@@ -71,10 +72,19 @@ async def evaluate_check(
     response = None
 
     def failed(reason, error=None):
+        malformed_injection = check_type == "injection" and reason in {
+            "invalid_output",
+            "invalid_response",
+        }
         return CheckOutcome(
             check_type,
-            "error",
-            f"Check unavailable: {reason}.",
+            "flagged" if malformed_injection else "error",
+            "Hidden-instructions check returned an invalid reply; the note requires human review."
+            if malformed_injection
+            else f"Check unavailable: {reason}.",
+            findings=("The note could not be cleared because the check reply was malformed.",)
+            if malformed_injection
+            else (),
             response=response,
             error_reason=reason,
             error=error,
@@ -127,7 +137,7 @@ async def run_safety_checks(
             return None
         existing = list(session.scalars(select(CheckResult).where(CheckResult.run_id == run_id)))
         if existing:
-            return all(row.outcome != "error" for row in existing) if len(existing) == 3 else None
+            return all(check_completed(row) for row in existing) if len(existing) == 3 else None
         if (
             session.scalar(
                 select(TraceStep.id)
@@ -177,11 +187,16 @@ async def run_safety_checks(
                     details_json={
                         "findings": list(result.findings),
                         "error_reason": result.error_reason,
+                        **(
+                            {"review_required": True}
+                            if result.outcome == "flagged" and result.error_reason is not None
+                            else {}
+                        ),
                     },
                 )
             )
             step = session.get(TraceStep, step_ids[check_type])
-            step.status = "failed" if result.outcome == "error" else "completed"
+            step.status = "failed" if result.error_reason is not None else "completed"
             step.started_at = started_at
             step.completed_at = utc_now()
 
@@ -210,4 +225,4 @@ async def run_safety_checks(
     for result in results:
         if isinstance(result, BaseException):
             raise result
-    return all(result.outcome != "error" for result in results)
+    return all(result.error_reason is None for result in results)
