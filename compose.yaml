@@ -7,6 +7,8 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       MISSION_CONTROL_DB_PATH: /data/mission_control.db
+      DEMO_DIRECTOR_TOKEN: ${DEMO_DIRECTOR_TOKEN:-}
+      DEMO_ENGINEER_TOKEN: ${DEMO_ENGINEER_TOKEN:-}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-foundry}
       ANTHROPIC_FOUNDRY_API_KEY: ${ANTHROPIC_FOUNDRY_API_KEY:-}
       ANTHROPIC_FOUNDRY_RESOURCE: ${ANTHROPIC_FOUNDRY_RESOURCE:-}
@@ -54,6 +56,8 @@ services:
       OPENAI_API_KEY: ""
       ANTHROPIC_API_KEY: ""
       ANTHROPIC_FOUNDRY_API_KEY: ""
+      DEMO_DIRECTOR_TOKEN: ""
+      DEMO_ENGINEER_TOKEN: ""
       MISSION_CONTROL_DB_PATH: /tmp/mission-control-tests.db
 
 volumes:
