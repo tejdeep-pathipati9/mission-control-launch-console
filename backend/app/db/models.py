@@ -86,7 +86,7 @@ class PipelineRun(Base):
     total_input_tokens: Mapped[int | None] = mapped_column(Integer, default=0)
     total_output_tokens: Mapped[int | None] = mapped_column(Integer, default=0)
     total_cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(18, 10), default=Decimal(0))
-    cost_complete: Mapped[bool] = mapped_column(Boolean, default=True)
+    cost_complete: Mapped[bool] = mapped_column(Boolean, default=False)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 

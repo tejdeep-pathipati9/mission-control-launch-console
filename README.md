@@ -1,7 +1,7 @@
 # Mission Control
 
 Meridian Launch Services anomaly-report console. The backend foundation, classification,
-concurrent note checks, and briefing review are implemented; human approval and the frontend are
+concurrent note checks, briefing review, and cost accounting are implemented; human approval and the frontend are
 upcoming milestones. This demo is not
 certified launch software. Briefing approval will never authorize a launch or change a verdict.
 
@@ -25,8 +25,8 @@ Background classification validates a structured subsystem/severity response, fa
 `unknown` / `high` on invalid output, refusal, timeout, or call failure. Any launch-limit breach
 forces high severity; deadlines use the original submission time. Trace entries retain the
 classification, fallback reason, model identity, reported usage, and applicable pricing snapshot.
-Cost for attempted model calls remains unavailable until the accounting feature calculates it;
-missing usage is never zeroed.
+Python calculates token-cost estimates with `Decimal` using the saved pricing snapshot and reported
+usage. Missing usage or required rates leave cost unavailable; they are never replaced with zero.
 Three separate model checks then run concurrently: prompt injection, missing details, and panic/tone.
 Each persists its own `clear`, `flagged`, or `error` result, reason, findings, and token trace as it
 finishes. A failed/unavailable check produces `failed` / `required_check_failed`; missing credentials
@@ -60,13 +60,16 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 265 tests passed locally and in network-disabled
+**Verification (November 17, 2026):** 322 tests passed locally and in network-disabled
 Docker; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
 while evaluation is blocked. Completed drafts, check findings, and deterministic verdicts survive
 interruption. Model behavior is tested with scripted fakes and mocked SDK HTTP; these tests do
 not measure live-model detection or narrative-review accuracy and require no paid model calls.
+Accounting tests cover cache reads/writes, decimal rounding, billed failures, incomplete totals,
+multiple attempts, and saved prices across restart/configuration changes. The real Anthropic SDK
+also completes synthetic full-pipeline tests through a mocked HTTP transport.
 
 See [the plan](PLAN.md) for milestones. The final start command will include the browser UI
 once the frontend stack is selected.
@@ -79,6 +82,20 @@ once the frontend stack is selected.
 | `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |
 | `GET` | `/api/reports/{id}` | Report, current run, checks, trace, briefing history, approval history |
 | `GET` | `/api/health` | Check API and database connectivity |
+
+`current_run` contains that attempt's token/cost totals and `known_cost_usd` subtotal. Report-level
+`costs` aggregates all attempts, including failed attempts; `pipeline_runs` retains each attempt's
+totals. `total_cost_usd` is null if any recorded step lacks a calculable cost. `known_cost_usd` sums
+only available costs and must not be presented as a full total when `cost_complete` is false.
+While processing, totals are provisional and `cost_complete` stays false. No-call code/configuration
+steps cost zero; simulated model replies have no live price. Older unpriced traces stay unavailable.
+
+Each trace includes timestamps, `latency_ms` (null while running), normalized input/output counts,
+and USD cost. `details_json` preserves raw provider usage, the applied rates, component amounts,
+rounding policy, and a `cost_status` explaining unavailable amounts. Dollar amounts serialize as
+decimal strings, rounded per step to ten decimal places before summing. OpenAI input includes cache
+hits; Claude's normalized input sums base, cache reads, and cache writes. Raw counters remain
+separate, following [Claude's usage accounting](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
 
 Approval is not implemented yet; classification runs through report submission. A `no_go` verdict is a valid stored
 report, not a validation failure. Malformed or non-finite readings, booleans/numeric strings,
@@ -99,9 +116,16 @@ Set `ANTHROPIC_FOUNDRY_API_KEY` and either `ANTHROPIC_FOUNDRY_RESOURCE` or
 `ANTHROPIC_FOUNDRY_BASE_URL` (ending in `/anthropic/`). `ANTHROPIC_MODEL` is your Foundry
 deployment name; the template uses `claude-opus-5`, which must match the name you deployed.
 These are the [SDK's Foundry connection settings](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry).
-Set all three `FOUNDRY_*_USD_PER_MILLION` values from your deployment's pricing to record rates;
-direct Anthropic list prices are not assumed for Foundry. Cache usage remains separately identified.
+Set `FOUNDRY_INPUT_USD_PER_MILLION`, `FOUNDRY_CACHED_INPUT_USD_PER_MILLION`, and
+`FOUNDRY_OUTPUT_USD_PER_MILLION` together from your deployment's pricing. Nonzero cache writes
+also require the corresponding `FOUNDRY_CACHE_WRITE_5M_USD_PER_MILLION` or
+`FOUNDRY_CACHE_WRITE_1H_USD_PER_MILLION` rate and a reported TTL breakdown. No write rate is
+needed when the provider reports zero writes. Direct Anthropic prices are not assumed for Foundry;
+missing prices keep dollar totals unavailable. Rates may be zero but must be finite and nonnegative.
 Direct Anthropic access remains optional with `MODEL_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`.
+Custom direct Anthropic prices use the matching `ANTHROPIC_*_USD_PER_MILLION` variables,
+including optional `ANTHROPIC_CACHE_WRITE_5M_USD_PER_MILLION` and
+`ANTHROPIC_CACHE_WRITE_1H_USD_PER_MILLION`; custom cache-write prices are never inferred.
 The existing OpenAI adapter remains available with `MODEL_PROVIDER=openai`, `OPENAI_API_KEY`,
 and `OPENAI_MODEL`; providers never switch automatically after failures.
 `MODEL_TIMEOUT_SECONDS` defaults to 30 and `MODEL_MAX_OUTPUT_TOKENS` to 1024.

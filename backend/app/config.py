@@ -38,6 +38,10 @@ class Settings:
     foundry_input_usd_per_million: Decimal | None = None
     foundry_cached_input_usd_per_million: Decimal | None = None
     foundry_output_usd_per_million: Decimal | None = None
+    foundry_cache_write_5m_usd_per_million: Decimal | None = None
+    foundry_cache_write_1h_usd_per_million: Decimal | None = None
+    anthropic_cache_write_5m_usd_per_million: Decimal | None = None
+    anthropic_cache_write_1h_usd_per_million: Decimal | None = None
 
     def __post_init__(self):
         if not isfinite(self.model_timeout_seconds) or self.model_timeout_seconds <= 0:
@@ -58,6 +62,11 @@ class Settings:
                     )
                 if any(not rate.is_finite() or rate < 0 for rate in rates):
                     raise ValueError("Model prices must be finite and nonnegative")
+        for provider in ("foundry", "anthropic"):
+            for duration in ("5m", "1h"):
+                rate = getattr(self, f"{provider}_cache_write_{duration}_usd_per_million")
+                if rate is not None and (not rate.is_finite() or rate < 0):
+                    raise ValueError("Cache write prices must be finite and nonnegative")
 
     @property
     def selected_model(self) -> str | None:
@@ -80,6 +89,17 @@ class Settings:
                 ),
                 "output_usd_per_million": str(getattr(self, f"{provider}_output_usd_per_million")),
                 "source": "configuration",
+                **({"deployment": self.anthropic_model} if provider == "foundry" else {}),
+                **{
+                    f"cache_write_{duration}_usd_per_million": str(rate)
+                    for duration in ("5m", "1h")
+                    if (
+                        rate := getattr(
+                            self, f"{provider}_cache_write_{duration}_usd_per_million", None
+                        )
+                    )
+                    is not None
+                },
             }
         if provider == "foundry":
             return None  # Deployment/region pricing must be explicitly configured for Foundry.
@@ -89,8 +109,16 @@ class Settings:
                 "input_usd_per_million": "5.00",
                 "cached_input_usd_per_million": "0.50",
                 "output_usd_per_million": "25.00",
-                "cache_write_5m_usd_per_million": "6.25",
-                "cache_write_1h_usd_per_million": "10.00",
+                "cache_write_5m_usd_per_million": str(
+                    self.anthropic_cache_write_5m_usd_per_million
+                    if self.anthropic_cache_write_5m_usd_per_million is not None
+                    else "6.25"
+                ),
+                "cache_write_1h_usd_per_million": str(
+                    self.anthropic_cache_write_1h_usd_per_million
+                    if self.anthropic_cache_write_1h_usd_per_million is not None
+                    else "10.00"
+                ),
                 "source": "https://platform.claude.com/docs/en/models/opus-5/overview",
                 "verified_on": "2026-11-17",
             }
@@ -137,6 +165,10 @@ class Settings:
                     "FOUNDRY_INPUT_USD_PER_MILLION",
                     "FOUNDRY_CACHED_INPUT_USD_PER_MILLION",
                     "FOUNDRY_OUTPUT_USD_PER_MILLION",
+                    "FOUNDRY_CACHE_WRITE_5M_USD_PER_MILLION",
+                    "FOUNDRY_CACHE_WRITE_1H_USD_PER_MILLION",
+                    "ANTHROPIC_CACHE_WRITE_5M_USD_PER_MILLION",
+                    "ANTHROPIC_CACHE_WRITE_1H_USD_PER_MILLION",
                 )
             },
         )

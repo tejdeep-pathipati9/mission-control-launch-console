@@ -4,6 +4,7 @@ from sqlalchemy import URL, create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, CheckResult, PipelineRun, Report, TraceStep, utc_now
+from app.services.trace import refresh_totals
 
 
 class Database:
@@ -76,7 +77,9 @@ class Database:
                                 )
                             )
                     # Usage for an interrupted external call may never be reported.
-                    run.cost_complete = False
+                    step.cost_usd = None
+                    step.details_json = {**step.details_json, "cost_status": "interrupted"}
+                refresh_totals(session, run)
 
     def close(self) -> None:
         self.engine.dispose()
