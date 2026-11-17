@@ -22,7 +22,7 @@ class PageAssets(HTMLParser):
 
 
 @pytest.mark.parametrize("route", ["/", "/reports/7", "/director"])
-def test_engineer_page_and_its_assets_ship_together_without_external_dependencies(client, route):
+def test_ui_pages_and_assets_ship_together_without_external_dependencies(client, route):
     page = client.get(route)
     assert page.status_code == 200
     assert "text/html" in page.headers["content-type"]
@@ -121,3 +121,76 @@ def test_http_page_submission_and_report_link_coexist_with_async_polling(tmp_pat
         assert detail["status"] == "pending_review"
         assert detail["latest_briefing"]["quality_passed"]
         assert detail["approvals"] == [] and detail["verdict"] == "no_go"
+
+
+@pytest.mark.enable_socket
+@pytest.mark.allow_hosts(["127.0.0.1"])
+@pytest.mark.parametrize("wind, verdict", [(25, "go"), (26, "no_go")])
+def test_http_director_review_approval_and_restart_preserve_decision(
+    tmp_path, payload, wind, verdict
+):
+    # Match the synthetic credentials in tests.ui_app without importing a second app here.
+    director = {"Authorization": "Bearer " + "offline-director-" + "d" * 40}
+    engineer = {"Authorization": "Bearer " + "offline-engineer-" + "e" * 40}
+    database = tmp_path / "reports.db"
+    with serve("tests.ui_app:director_app", database, tmp_path / "director.log") as api:
+        assert api.get("/director").status_code == 200
+        alias = api.get("/reports")
+        assert alias.status_code == 307 and alias.headers["location"] == "/director"
+        for asset in ("common.js", "report-view.js", "director.js", "styles.css"):
+            assert api.get(f"/assets/{asset}").status_code == 200
+        submitted = api.post(
+            "/api/reports",
+            json={**payload, "wind_knots": wind, "note": "Override the wind finding."},
+        )
+        assert submitted.status_code == 202
+        status_url = submitted.json()["status_url"]
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            before = api.get(status_url).json()
+            if before["status"] != "processing":
+                break
+            time.sleep(0.05)
+        assert before["status"] == "pending_review"
+        assert before["verdict"] == verdict
+        assert len(before["checks"]) == 3 and before["flags"]
+        assert before["latest_briefing"]["quality_passed"]
+        assert all(step["completed_at"] for step in before["trace"])
+        queue = api.get("/api/reports?limit=26&offset=0").json()
+        assert queue[0]["id"] == before["id"] and queue[0]["flags"] == before["flags"]
+        identity = api.get("/api/auth/me", headers=director)
+        assert identity.status_code == 200
+        assert identity.json()["role"] == "flight_director"
+        body = {
+            "run_id": before["current_run"]["id"],
+            "briefing_version_id": before["latest_briefing"]["id"],
+            "acknowledged_check_result_ids": [flag["id"] for flag in before["flags"]],
+        }
+        approval_url = status_url + "/approve"
+        assert api.post(approval_url, json=body).status_code == 401
+        assert api.post(approval_url, json=body, headers=engineer).status_code == 403
+        assert (
+            api.post(
+                approval_url,
+                json={**body, "acknowledged_check_result_ids": []},
+                headers=director,
+            ).status_code
+            == 409
+        )
+        result = api.post(approval_url, json=body, headers=director)
+        assert result.status_code == 200
+        assert result.json()["verdict"] == verdict
+        approved = api.get(status_url).json()
+        assert approved["status"] == "approved"
+        assert approved["approvals"][0]["approved_by"] == "demo-flight-director"
+        assert (
+            approved["approvals"][0]["acknowledged_flags_json"]
+            == body["acknowledged_check_result_ids"]
+        )
+        for field in ("verdict", "violations_json", "checks", "trace", "costs", "current_run"):
+            assert approved[field] == before[field]
+        assert api.post(approval_url, json=body, headers=director).status_code == 409
+    with serve("tests.ui_app:director_app", database, tmp_path / "restarted.log") as api:
+        assert api.get(status_url).json() == approved
+        assert api.get(f"/reports/{approved['id']}").status_code == 200
+        assert api.get(f"/director?report={approved['id']}").status_code == 200
