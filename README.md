@@ -2,8 +2,8 @@
 
 Meridian Launch Services anomaly-report console. The backend foundation, classification,
 concurrent note checks, briefing review, cost accounting, and human approval are implemented.
-The engineer form and separate report page are implemented in plain HTML/CSS, with small
-JavaScript scripts for submission and polling. The Flight Director page is the next feature. Both use the agreed white background
+The engineer form, separate report page, and Flight Director console use plain HTML/CSS, with small
+JavaScript files for submission, polling, and approval. All pages use a white background
 and black text. This demo is not certified launch software. Briefing approval never authorizes
 a launch or changes a verdict.
 
@@ -21,7 +21,21 @@ readings outside launch limits and shows field errors. After submission it navig
 findings, and latest briefing. This page can be reopened directly or refreshed without resubmitting.
 It polls every two seconds while processing and stops at a terminal state. If polling fails,
 **Retry status** fetches the saved report without another submission. **New report** links back
-to the input page. Existing `/?report={id}` bookmarks redirect to the new report page. The director console and its navigation link arrive in feature 8.
+to the input page. Existing `/?report={id}` bookmarks redirect to the new report page.
+
+Open [Flight Director](http://localhost:8000/director) to review the paginated report queue;
+`/reports` redirects there. Select a report to inspect its original input, findings, briefing history,
+approval history, and a trace card for each processing step. Costs distinguish complete totals
+from known subtotals when usage or prices are unavailable. The queue refreshes every five seconds;
+selected processing reports poll every two seconds. `/director?report={id}` opens a specific report.
+
+For approval, configure `DEMO_DIRECTOR_TOKEN` in your ignored runtime configuration, then enter it
+under **Director access → Connect**. Review the latest briefing and explicitly acknowledge every
+flagged check and its findings before choosing **Approve briefing**. The token stays in page memory,
+is sent only to authenticated API endpoints, and is cleared on disconnect or page navigation.
+Processing, failed, unresolved-check, and already approved reports cannot be approved.
+Conflicts reload the report and clear acknowledgements; interrupted saves are checked with GET
+and never automatically submitted again. Approval does not change a NO-GO into a GO.
 
 [API documentation](http://localhost:8000/docs) remains available.
 Health is available at [GET /api/health](http://localhost:8000/api/health).
@@ -69,7 +83,7 @@ From the repository root:
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test command runs 26 JavaScript workflow checks in a build stage with networking disabled,
+The test command runs 52 JavaScript workflow checks in a build stage with networking disabled,
 then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
 runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
 serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
@@ -80,7 +94,7 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 423 Python tests and 26 JavaScript workflow checks passed
+**Verification (November 17, 2026):** 427 Python tests and 52 JavaScript workflow checks passed
 locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
@@ -92,13 +106,16 @@ multiple attempts, and saved prices across restart/configuration changes. The re
 also completes synthetic full-pipeline tests through a mocked HTTP transport. Approval tests cover
 server-side permissions, GO/NO-GO preservation, exact flag acknowledgements, stale versions,
 restart persistence, audit-failure rollback, and coordinated concurrent requests with one winner.
-UI checks cover validation, duplicate submits, polling/retry, saved links, stale responses, terminal
-states, and rendering untrusted model text as text. An isolated production-image Compose smoke
-test reached healthy status and served `/`, report-link URLs, CSS/JS, API health, and `/docs`
-with HTTP 200. Interactive browser/layout QA remains pending; the DOM fixture is not a visual test.
+UI checks cover validation, duplicate submits, polling/retry, saved links, queue pagination, stale
+responses, terminal states, authentication, flag acknowledgements, uncertain approval saves, and
+rendering untrusted model text as text. Real-HTTP director tests approve flagged GO and NO-GO
+briefings, reject unauthorized and incomplete approvals, and retain the audit after restart.
+An isolated production-image Compose smoke test reached healthy status and served `/`,
+`/director`, report-link URLs, CSS/JS, API health, and `/docs` with HTTP 200. `/reports` returned a
+307 redirect to the console. Interactive browser/layout QA remains pending; the DOM fixture is not a visual test.
 
-See [the plan](PLAN.md) for milestones. The start command now serves the engineer page and API;
-the full browser workflow still needs the director page from feature 8.
+See [the plan](PLAN.md) for milestones. The start command serves all three pages and the API.
+Final grading/demo verification is the next feature.
 
 ## API
 
@@ -106,6 +123,8 @@ the full browser workflow still needs the director page from feature 8.
 | --- | --- | --- |
 | `GET` | `/` | Engineer submission form; old `?report={id}` links redirect |
 | `GET` | `/reports/{id}` | Separate saved-report page with processing status and briefing |
+| `GET` | `/director` | Report queue, selected details, traces, costs, and human approval |
+| `GET` | `/reports` | Redirect to the director queue |
 | `GET` | `/assets/*` | Local CSS/JavaScript files |
 | `POST` | `/api/reports` | Validate, persist the decision, schedule processing; return `202` |
 | `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |
@@ -136,7 +155,8 @@ permission. These map to fixed server-owned identities; request fields/headers c
 or approver name. `/api/auth/me` is a helper, not an assignment requirement. This demo has no account
 registration, password database, or OAuth integration.
 
-Use **Authorize → DemoBearer** in `/docs` with the configured token. Approval requires this body,
+The console's **Connect** verifies the identity with `/api/auth/me`. Alternatively, use
+**Authorize → DemoBearer** in `/docs` with the configured token. Approval requires this body,
 using IDs from the latest report detail:
 
 ```json

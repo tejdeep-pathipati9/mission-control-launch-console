@@ -4,7 +4,7 @@
 
 **Goal:** Engineers submit anomaly reports; a backend pipeline validates readings, classifies and checks the note, produces a reviewed briefing, and leaves the final briefing approval to the Flight Director.
 
-**Scope right now:** Complete the browser workflow on the implemented backend. **Frontend: plain HTML, CSS, and small vanilla JavaScript files.** The final delivery is a containerized full-stack application.
+**Scope right now:** Browser workflow implemented; final usability, demo, and grading verification remain. **Frontend: plain HTML, CSS, and small vanilla JavaScript files.** Delivery is a containerized full-stack application.
 
 > This is an assignment/demo system, **not software certified for actual launch decisions**. A model's output must never override deterministic launch rules or approve a briefing.
 
@@ -29,7 +29,7 @@
 ### 1.1 Containerized delivery (DECIDED)
 
 - Root-level `compose.yaml`, `Dockerfile`, and `.dockerignore`; build context is the repository root; HTML/CSS/JavaScript will live in `backend/app/static/` and ship with the existing application copy.
-- The default `app` service serves `/api/*` and the browser UI on `http://localhost:8000`. FastAPI serves the submission and report pages with local CSS/JavaScript assets; the director console is the remaining page. No Node/npm runtime, React, bundler, CDN, frontend compilation, or separate frontend service is needed. A test-only Node stage executes the dependency-free JavaScript workflow checks with networking disabled; it is excluded from the runtime target. Compose must still start the complete app with the same command.
+- The default `app` service serves `/api/*` and the browser UI on `http://localhost:8000`. FastAPI serves submission, report, and director pages with local CSS/JavaScript assets. No Node/npm runtime, React, bundler, CDN, frontend compilation, or separate frontend service is needed. A test-only Node stage executes the dependency-free JavaScript workflow checks with networking disabled; it is excluded from the runtime target. Compose starts the complete app with the same command.
 - Install Python dependencies from `backend/pyproject.toml` and `backend/uv.lock` using a frozen lockfile. The runtime working directory is `/app/backend`, so `app.main:app` resolves correctly. Keep dependency/build tooling in build stages where practical; the runtime contains the application and its installed dependencies.
 - Run one Uvicorn worker, bound to `0.0.0.0:8000`, without auto-reload. The MVP uses one app container; do not scale it while interrupted-run recovery assumes exclusive ownership of processing jobs.
 - Mount a named volume, `mission_control_data`, at `/data`; use `/data/mission_control.db` for SQLite. Ensure the runtime user can write there. Rebuilding/recreating the app or running `docker compose down` must preserve records; `down --volumes` is a deliberate data reset and is excluded from ordinary startup/shutdown instructions.
@@ -37,14 +37,14 @@
 - A separate `tests` service under the `test` profile uses a test image target with test dependencies, a temporary database, an explicit fake `ModelClient`, no live API key, and `network_mode: none`. It must not mount the application data volume or depend on the running app. The same command builds a test-only Node stage for offline JavaScript workflow checks and runs the Python suite in the isolated test container. [Compose profiles reference](https://docs.docker.com/compose/how-tos/profiles/).
 - Docker Engine/Desktop with Compose is the host prerequisite; Python and uv run inside images; the static frontend requires no build tooling. Initial image builds may download dependencies. The test process itself must run offline once the image is built.
 
-**Delivery commands, run from the repository root (API, engineer UI, and tests verified; director UI pending feature 8):**
+**Delivery commands, run from the repository root (API, all UI pages, and offline tests verified):**
 
 ```bash
 docker compose up --build
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The first command must eventually expose the complete browser workflow, not only API documentation. It now serves the API and engineer page; the full browser workflow remains incomplete until the director page is implemented.
+The first command serves the API, engineer form, saved-report page, and Flight Director console. Interactive browser/layout QA remains pending.
 
 ## 2. Non-negotiable behavior
 
@@ -166,7 +166,7 @@ Each branch delivers one focused change with its related tests and documentation
 | 5 | `feature/trace-costs` | Two focused commits: pricing/math/configuration, then pipeline/API accounting. Per-step costs, run/report totals, unknown-usage handling, saved pricing, and trace latency. | 6 — accounting |
 | 6 | `feature/director-approval` | Two focused commits: local demo bearer guard/configuration, then transactional approval/API tests. Current-version approval, flag acknowledgements, atomic audit, and duplicate/stale protection. | 6 — approval |
 | 7 | `feature/report-submission-ui` | Two focused commits: plain-HTML engineer page/static serving, then offline workflow tests and Docker verification. Validation, confirmation, saved links, polling/retry, and shared minimal styling. | 7 — engineer workflow |
-| 8 | `feature/director-console` | Build the second plain-HTML page: director queue and selected-report details together, verdicts/deadlines, findings, briefing history, trace cards/costs, authenticated approval, and flag acknowledgements. | 7 — director workflow |
+| 8 | `feature/director-console` | Three focused commits: queue and inspectable details; authenticated approval and acknowledgements; HTTP/restart tests and delivery evidence. Includes verdicts/deadlines, findings, briefing history, and trace cards/costs. | 7 — director workflow |
 | 9 | `feature/final-verification` | Full-workflow integration fixes, complete-app Docker/offline-test verification, final README evidence, completed tool choices, and grading/demo checks. | 8 |
 
 **Branch workflow:**
@@ -254,7 +254,7 @@ Each branch delivers one focused change with its related tests and documentation
 
 **Approval implemented:** A server-configured demo bearer token selects a fixed Flight Director identity; a separate optional engineer token exercises role denial. Blank tokens grant no access. This guard and `/api/auth/me` helper are implementation choices, not assignment mandates; account management is outside this feature. Approval checks the current run/version, complete checks, quality result, and exact flag IDs. A conditional status update is the first SQL statement, acquiring SQLite's writer lock before validation reads. All checks and the approval audit share that transaction; conflicts or storage errors roll back the status change. Concurrent requests admit one winner. The report becomes `approved`; processing history, costs, flags, and verdict remain unchanged.
 
-**Done when:** The backend can show what happened, what it cost, and who approved, without any model being able to approve. Backend accounting and approval are complete; the browser workflow is next.
+**Done when:** The backend can show what happened, what it cost, and who approved, without any model being able to approve. Backend accounting, approval, and browser integration are implemented.
 
 ### Milestone 7 — Frontend and final demonstration
 
@@ -269,16 +269,18 @@ Each branch delivers one focused change with its related tests and documentation
 Use small local JavaScript files for `fetch`, form submission, selection, and two-second polling while processing. Render untrusted report/model text as text, not executable HTML. The pages and assets ship with the Python app; no frontend compilation or external asset downloads are required.
 
 - [x] Build the engineer form with field errors and redirect successful submissions to a separate saved-report page.
-- [ ] Build the Flight Director report queue and selected-report detail on the second page.
-- [ ] Display verdict, violations, severity, deadline, check flags, briefing versions, trace cards, token counts, and costs.
-- [ ] Add explicit human approval interaction through the protected API.
+- [x] Build the Flight Director report queue and selected-report detail together at `/director`; `/reports` redirects to the queue.
+- [x] Display verdict, violations, severity, deadline, check flags, briefing versions, trace cards, token counts, and costs.
+- [x] Add explicit human approval interaction through the protected API, keeping demo credentials only in memory.
 - [x] The report page polls while processing, stops at terminal states, shows failures/unavailable classification, and offers GET-only status retries. Duplicate submits and stale responses are guarded.
-- [ ] Director page displays provisional costs and requires explicit flag acknowledgement before approval.
+- [x] Director page displays provisional costs and requires explicit flag acknowledgement before approval. Conflicts refresh the report and reset acknowledgements; interrupted POSTs are never retried automatically.
 - [x] Package the engineer HTML/CSS/JS in the existing runtime image; verify UI/assets, report-link reload, `/api`, and `/docs` coexist. The isolated production-image smoke test reached healthy status.
-- [ ] Complete the director page so the root Compose command exposes the entire browser workflow.
+- [x] Complete the director page so the root Compose command exposes the entire browser workflow.
 - [ ] Verify the full workflow, restart persistence, and usability.
 
 **Feature 7 evidence:** 423 Python tests plus 26 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; interactive browser/layout QA is still pending because browser access was unavailable.
+
+**Feature 8 evidence:** 427 Python tests and 52 JavaScript checks pass locally and through the offline Docker test command. Real HTTP tests cover flagged GO/NO-GO briefing approval, permission and acknowledgement rejection, unchanged verdict/history/costs, and approval persistence after restart. The isolated production image serves all pages and assets. Full usability and manual demo verification remain for feature 9; the in-memory DOM tests do not establish visual correctness.
 
 **Done when:** All information required by the rubric can be viewed and the approval performed from the browser.
 

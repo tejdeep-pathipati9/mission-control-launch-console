@@ -48,6 +48,25 @@ fieldset:disabled input, fieldset:disabled textarea { opacity: 1; -webkit-text-f
 li, pre { overflow-wrap: anywhere; }
 pre { white-space: pre-wrap; font: inherit; border: 1px solid #000; padding: 16px; }
 footer { border-top: 1px solid #000; }
+.table-scroll { overflow-x: auto; margin: 20px 0; }
+table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem; }
+caption { text-align: left; padding-bottom: 8px; }
+th, td { padding: 10px; border-bottom: 1px solid #000; vertical-align: top; }
+th { white-space: nowrap; }
+.pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.detail-card { border: 1px solid #000; padding: 16px; margin: 16px 0; overflow-wrap: anywhere; }
+.detail-card h3 { margin: 0 0 8px; }
+.detail-card pre { margin-bottom: 0; }
+.detail-card dl { margin: 8px 0; }
+.detail-card dd { margin-left: 0; }
+details > summary { cursor: pointer; font-weight: 600; }
+#report-status { margin-top: 32px; }
+[aria-current="true"], [aria-current="page"] { font-weight: 700; }
+.auth-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; }
+.auth-controls .field { flex: 1 1 240px; margin: 0; }
+#director-auth { margin: 16px 0 28px; }
+.acknowledgement { display: flex; align-items: flex-start; gap: 8px; }
+.acknowledgement input { display: inline-block; width: auto; margin-top: 0.35em; flex: none; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip-link { position: absolute; top: -100px; left: 16px; background: #fff; padding: 8px; }
 .skip-link:focus { top: 8px; }
