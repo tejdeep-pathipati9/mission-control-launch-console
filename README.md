@@ -112,6 +112,11 @@ Local data defaults to `backend/data/mission_control.db`. Set `MISSION_CONTROL_D
 in the environment to change it; see [.env.example](.env.example). The app does not
 automatically load `.env` files. Never point tests at your application database.
 
+The shared `.codex/hooks.json` guard blocks common credential reads and withholds recognized
+secrets from tool output. Review and trust it through Codex's hook controls before relying on it;
+committing the configuration does not activate trust. It is a guardrail, not OS-level isolation.
+Run its synthetic tests with `python3 -m unittest discover -s .codex/hooks -p 'test_*.py'`.
+
 Dependencies are locked in `backend/uv.lock`. Lint and formatting checks:
 
 ```bash
