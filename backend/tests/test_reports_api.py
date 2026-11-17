@@ -8,7 +8,7 @@ from sqlalchemy.exc import OperationalError
 from app.db.models import PipelineRun, Report, TraceStep
 
 
-def test_submit_poll_list_and_foundation_failure(client, payload):
+def test_submit_poll_list_and_classification_fallback(client, payload):
     response = client.post("/api/reports", json=payload)
     assert response.status_code == 202
     accepted = response.json()
@@ -19,8 +19,11 @@ def test_submit_poll_list_and_foundation_failure(client, payload):
     assert detail["engineer_name"] == payload["engineer_name"]
     assert detail["verdict"] == "go"
     assert detail["violations_json"] == []
-    assert detail["severity"] is None
-    assert detail["brief_by_at"] is None
+    assert detail["subsystem"] == "unknown"
+    assert detail["severity"] == "high"
+    assert datetime.fromisoformat(detail["brief_by_at"]) - datetime.fromisoformat(
+        detail["created_at"]
+    ) == timedelta(minutes=5)
     assert detail["status"] == "failed"
     assert detail["current_run"]["failure_reason"] == "pipeline_not_implemented"
     assert detail["current_run"]["total_input_tokens"] == 0
@@ -29,7 +32,13 @@ def test_submit_poll_list_and_foundation_failure(client, payload):
     assert detail["checks"] == detail["flags"] == detail["briefing_versions"] == []
     assert detail["latest_briefing"] is None
     assert detail["approvals"] == []
-    assert [step["step_name"] for step in detail["trace"]] == ["launch_limits", "pipeline"]
+    assert [step["step_name"] for step in detail["trace"]] == [
+        "launch_limits",
+        "classification",
+        "pipeline",
+    ]
+    assert detail["trace"][1]["details_json"]["fallback_reason"] == "model_not_configured"
+    assert detail["trace"][1]["details_json"]["model_call_made"] is False
     rule = detail["trace"][0]
     assert rule["status"] == "completed"
     assert rule["input_tokens"] == rule["output_tokens"] == 0
@@ -37,7 +46,7 @@ def test_submit_poll_list_and_foundation_failure(client, payload):
     assert rule["started_at"].endswith("Z")
     assert rule["completed_at"] is not None
     assert client.get("/api/reports").json()[0]["id"] == detail["id"]
-    assert client.get("/api/health").json() == {"status": "ok", "stage": "foundation"}
+    assert client.get("/api/health").json() == {"status": "ok", "stage": "classification"}
 
 
 def test_all_numeric_violations_are_valid_reports_and_force_high(client, payload):
