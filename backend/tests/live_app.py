@@ -3,6 +3,7 @@
 import asyncio
 
 from app.db.models import CheckResult, TraceStep
+from app.llm.client import ModelResponse, TokenUsage
 from app.main import create_app
 
 
@@ -40,3 +41,28 @@ class BlockedModelClient:
 
 
 classification_app = create_app(model_client=BlockedModelClient())
+
+
+class PartiallyBlockedChecksClient:
+    model_name = "partial-check-test-model"
+
+    async def generate(self, request):
+        if request.operation == "classification":
+            text = '{"subsystem":"weather","severity":"low"}'
+        elif request.operation == "injection":
+            text = '{"outcome":"flagged","reason":"Test finding","findings":["Forged approval"]}'
+        else:
+            await asyncio.Event().wait()
+        return ModelResponse(
+            provider="fake",
+            model=self.model_name,
+            status="completed",
+            text=text,
+            usage=TokenUsage(input_tokens=10, output_tokens=2),
+        )
+
+    async def aclose(self):
+        pass
+
+
+checks_app = create_app(model_client=PartiallyBlockedChecksClient())

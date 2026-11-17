@@ -26,6 +26,9 @@ class TokenUsage(BaseModel):
     output_tokens: TokenCount | None = None
     total_tokens: TokenCount | None = None
     cached_input_tokens: TokenCount | None = None
+    cache_write_input_tokens: TokenCount | None = None
+    cache_write_5m_input_tokens: TokenCount | None = None
+    cache_write_1h_input_tokens: TokenCount | None = None
     reasoning_output_tokens: TokenCount | None = None
 
     @property
@@ -36,7 +39,7 @@ class TokenUsage(BaseModel):
 class ModelResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    provider: Literal["openai", "fake"]
+    provider: Literal["openai", "anthropic", "foundry", "fake"]
     model: str
     status: Literal["completed", "incomplete", "refused"]
     text: str | None

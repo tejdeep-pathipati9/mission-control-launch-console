@@ -33,7 +33,19 @@ def response(text=None, **changes):
 
 
 def submit(tmp_path, payload, scripted_response, **settings_changes):
-    client = FakeModelClient({"classification": [scripted_response]})
+    clear = ModelResponse(
+        provider="fake",
+        model="fake-model",
+        status="completed",
+        text='{"outcome":"clear","reason":"No findings.","findings":[]}',
+        usage=TokenUsage(input_tokens=0, output_tokens=0),
+    )
+    client = FakeModelClient(
+        {
+            "classification": [scripted_response],
+            **{name: [clear] for name in ("injection", "missing_details", "panic")},
+        }
+    )
     settings = Settings(tmp_path / "reports.db", **settings_changes)
     with TestClient(create_app(settings, model_client=client)) as api:
         accepted = api.post("/api/reports", json=payload)
@@ -69,7 +81,8 @@ def test_valid_classification_persists_effective_severity_and_deadline(
     assert detail["verdict"] == "go"
     assert detail["status"] == "failed"  # Checks and briefing review are still later features.
     assert detail["current_run"]["failure_reason"] == "pipeline_not_implemented"
-    assert detail["checks"] == detail["briefing_versions"] == detail["approvals"] == []
+    assert len(detail["checks"]) == 3
+    assert detail["briefing_versions"] == detail["approvals"] == []
     trace = detail["trace"][1]
     assert trace["step_name"] == "classification"
     assert trace["details_json"]["fallback_used"] is False
@@ -299,7 +312,7 @@ def test_generic_client_timeout_and_unexpected_error_use_safe_fallback(tmp_path,
 
 def test_app_closes_only_the_client_it_constructs(tmp_path, payload, monkeypatch):
     fake = FakeModelClient({"classification": [response()]})
-    monkeypatch.setattr("app.main.OpenAIModelClient", lambda settings: fake)
+    monkeypatch.setattr("app.main.create_model_client", lambda settings: fake)
     with TestClient(create_app(Settings(tmp_path / "reports.db"))) as api:
         api.post("/api/reports", json=payload)
         assert not fake.closed

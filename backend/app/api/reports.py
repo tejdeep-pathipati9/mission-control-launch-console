@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api")
 def health(request: Request) -> dict[str, str]:
     with request.app.state.database.sessions() as session:
         session.execute(text("SELECT 1"))
-    return {"status": "ok", "stage": "classification"}
+    return {"status": "ok", "stage": "concurrent_checks"}
 
 
 @router.post("/reports", response_model=ReportAccepted, status_code=status.HTTP_202_ACCEPTED)

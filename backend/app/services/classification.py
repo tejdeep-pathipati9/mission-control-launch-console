@@ -84,7 +84,7 @@ async def classify_report(
             },
             response_schema=Classification.model_json_schema(),
         )
-        requested_model = client.model_name if client is not None else settings.openai_model
+        requested_model = client.model_name if client is not None else settings.selected_model
         run.model_name = requested_model
         if client is not None:
             run.total_input_tokens = run.total_output_tokens = None
@@ -137,8 +137,8 @@ async def classify_report(
             "usage_status": "no_call"
             if no_call
             else ("reported" if usage and usage.complete else "unavailable_or_partial"),
-            "pricing": settings.pricing_for(response.model)
-            if response and response.provider == "openai"
+            "pricing": settings.pricing_for(response.model, response.provider)
+            if response and response.provider != "fake"
             else None,
             "cost_status": "no_call" if no_call else "not_calculated",
             "classification": outcome.classification.model_dump(),

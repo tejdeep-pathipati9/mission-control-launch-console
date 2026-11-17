@@ -3,7 +3,7 @@ from pathlib import Path
 from sqlalchemy import URL, create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 
-from app.db.models import Base, PipelineRun, Report, TraceStep, utc_now
+from app.db.models import Base, CheckResult, PipelineRun, Report, TraceStep, utc_now
 
 
 class Database:
@@ -58,6 +58,23 @@ class Database:
                 for step in steps:
                     step.status = "interrupted"
                     step.completed_at = now
+                    check_type = step.details_json.get("check_type")
+                    if check_type in {"injection", "missing_details", "panic"}:
+                        existing = session.scalar(
+                            select(CheckResult.id).where(
+                                CheckResult.run_id == run.id, CheckResult.check_type == check_type
+                            )
+                        )
+                        if existing is None:
+                            session.add(
+                                CheckResult(
+                                    run_id=run.id,
+                                    check_type=check_type,
+                                    outcome="error",
+                                    reason="Check interrupted by application restart.",
+                                    details_json={"findings": [], "error_reason": "interrupted"},
+                                )
+                            )
                     # Usage for an interrupted external call may never be reported.
                     run.cost_complete = False
 

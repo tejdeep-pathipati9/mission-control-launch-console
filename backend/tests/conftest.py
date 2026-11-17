@@ -8,6 +8,8 @@ from app.main import create_app
 @pytest.fixture(autouse=True)
 def no_api_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_FOUNDRY_API_KEY", raising=False)
 
 
 @pytest.fixture

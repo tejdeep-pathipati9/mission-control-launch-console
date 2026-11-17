@@ -28,5 +28,6 @@ FROM runtime AS tests
 COPY --from=test-dependencies /app/backend/.venv ./.venv
 COPY backend/pyproject.toml ./
 COPY backend/tests ./tests
-ENV OPENAI_API_KEY="" MISSION_CONTROL_DB_PATH=/tmp/mission-control-tests.db
+ENV OPENAI_API_KEY="" ANTHROPIC_API_KEY="" ANTHROPIC_FOUNDRY_API_KEY="" \
+    MISSION_CONTROL_DB_PATH=/tmp/mission-control-tests.db
 CMD ["pytest", "-q", "-p", "no:cacheprovider"]
