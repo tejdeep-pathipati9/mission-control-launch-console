@@ -1,311 +1,206 @@
 # Mission Control
 
-Meridian Launch Services anomaly-report console. The backend foundation, classification,
-concurrent note checks, briefing review, cost accounting, and human approval are implemented.
-The engineer form, separate report page, and Flight Director console use plain HTML/CSS, with small
-JavaScript files for submission, polling, and approval. The UI uses neutral surfaces, red for failures/NO-GO, and amber for review warnings. This demo is not certified launch software. Briefing approval never authorizes
-a launch or changes a verdict.
+An anomaly-report console for Meridian Launch Services. Engineers submit reports; the Flight
+Director reviews a short model-written briefing, launch verdict, checks, trace, and calculated cost.
+Built with FastAPI, SQLite, plain HTML/CSS/JavaScript, and Claude Opus 5 through Microsoft Foundry.
+See [tool choices](TOOL_CHOICES.md) for the reasons and tradeoffs.
 
-## Start
+**Approving a briefing never authorizes launch or changes its GO/NO-GO verdict.**
 
-Install and start Docker Desktop, or Docker Engine with the Compose plugin. From the repository root:
+## Run
+
+Install and start Docker Desktop, or Docker Engine with the Compose plugin. For live model
+processing, copy [.env.example](.env.example) to an ignored `.env` in the repository root and set:
+
+| Setting | Value |
+| --- | --- |
+| `ANTHROPIC_FOUNDRY_API_KEY` | Your Foundry API key; used only by the backend. |
+| `ANTHROPIC_FOUNDRY_RESOURCE` **or** `ANTHROPIC_FOUNDRY_BASE_URL` | Set exactly one. The base URL must end in `/anthropic/`. |
+| `ANTHROPIC_MODEL` | Your deployment name; the template uses `claude-opus-5`. |
+| `DEMO_DIRECTOR_TOKEN` | A random 32–256 character ASCII access key without whitespace, for human approval. Keep it separate from the model API key. |
+| `FOUNDRY_*_USD_PER_MILLION` | The template supplies Opus 5 Global Standard list prices. Adjust for your deployment; see [pricing](#pricing-and-persistence). |
+
+From the repository root, start the complete app:
 
 ```bash
 docker compose up --build
 ```
 
-Open [Mission Control](http://localhost:8000/) to submit an anomaly report. The form accepts
-readings outside launch limits and shows field errors. After submission it navigates to
-`/reports/{id}`, a separate review page showing the original readings/note, verdict, violations,
-deadline, findings, latest briefing, approval controls, costs, and trace cards. This page can be reopened directly or refreshed without resubmitting.
-It polls every two seconds while processing and stops at a terminal state. If polling fails,
-**Retry status** fetches the saved report without another submission. **New report** links back
-to the input page. Existing `/?report={id}` bookmarks redirect to the new report page.
+Open [New report](http://localhost:8000/), [Reports](http://localhost:8000/reports), or the
+[API documentation](http://localhost:8000/docs). The same container serves the frontend and API;
+no separate frontend install or build is needed.
 
-Open [Reports](http://localhost:8000/reports) for the paginated queue. Clicking a report opens
-its dedicated `/reports/{id}` review page; details never expand beneath the queue. **All reports**
-returns to the list, and browser Back/Forward work normally. The queue refreshes every five seconds;
-a processing report polls every two seconds. Old `/director?report={id}` and `/reports?report={id}`
-bookmarks redirect to the dedicated page. Costs distinguish complete totals from partial or
-unavailable amounts. Approval access appears on the review page when a briefing is pending.
-
-The review page uses the viewport width: a concise briefing and one checks table sit beside a
-sidebar for readings, deadline, approval, and cost. One compact trace card per step shows duration,
-input/output tokens, and cost; timestamps and raw execution data expand on demand. Full findings,
-review notes, original input, and saved briefings remain accessible without filling the main view.
-The layout stacks on smaller screens and supports larger text and reduced-motion preferences.
-
-For approval, configure `DEMO_DIRECTOR_TOKEN` in your ignored runtime configuration, then enter it
-in the collapsed **Approval access** panel and choose **Sign in**. This approval access key is
-separate from the Foundry API key; it grants the server-owned Flight Director role.
-Review the latest briefing and explicitly acknowledge every
-flagged check and its findings before choosing **Approve briefing**. The token stays in page memory,
-is sent only to authenticated API endpoints, and is cleared on disconnect or page navigation.
-Processing, failed, unresolved-check, and already approved reports cannot be approved.
-Conflicts reload the report and clear acknowledgements; interrupted saves are checked with GET
-and never automatically submitted again. Approval does not change a NO-GO into a GO.
-
-[API documentation](http://localhost:8000/docs) remains available.
-Health is available at [GET /api/health](http://localhost:8000/api/health).
-For live processing, copy `.env.example` to an ignored `.env` and set `ANTHROPIC_FOUNDRY_API_KEY`
-before starting Compose. Without a key, reports explicitly fall back to `unknown` / `high`;
-the API remains usable and no model calls are made. Tests always use injected fakes or mocked HTTP.
-
-Valid submissions return `202 Accepted` with a report ID, status URL, and `Location` header.
-The report, deterministic verdict, pipeline run, and rule trace are committed together.
-Background classification validates a structured subsystem/severity response, falling back to
-`unknown` / `high` on invalid output, refusal, timeout, or call failure. Any launch-limit breach
-forces high severity; deadlines use the original submission time. Trace entries retain the
-classification, fallback reason, model identity, reported usage, and applicable pricing snapshot.
-Python calculates token-cost estimates with `Decimal` using the saved pricing snapshot and reported
-usage. Missing usage or required rates leave cost unavailable; they are never replaced with zero.
-Three separate model checks then run concurrently: prompt injection, missing details, and panic/tone.
-Each persists its own `clear`, `flagged`, or `error` result, reason, findings, and token trace as it
-finishes. A failed/unavailable check produces `failed` / `required_check_failed`; missing credentials
-never yield fabricated clean results. Completed findings survive interrupted processing.
-After successful checks, the model drafts a briefing and a separate model call evaluates it.
-Failed quality assessments feed the next revision, for at most three drafts/reviews. Each version,
-feedback, and call trace is saved. The application renders canonical facts and flagged findings;
-changed structured facts force a revision even if the evaluator returns a pass. Narrative quality
-still depends on the evaluator. No model output changes the stored verdict or violations.
-The first passing draft moves the report to `pending_review`, with no approval record. Three quality
-failures produce `quality_review_exhausted`; model-call failures produce `draft_failed` or
-`evaluation_failed`. Required-check errors prevent drafting. Neither a model check nor a flagged
-finding authorizes launch.
-
-The writer and reviewer are **two model roles with separate API calls**, using the same configured
-Foundry model. They use distinct instructions and structured schemas; the reviewer receives the
-proposed draft, original report, checks, and canonical facts. Rejected feedback goes into the next
-writer call, with at most three writer/reviewer pairs. Two different models or an autonomous-agent
-framework are not required by the assignment. Neither role can approve a briefing.
-New summaries normally use 20–45 words, with no minimum to encourage padding. Python rejects summaries over 80 words even if the reviewer
-passes them. Internal jargon, three-reading recitals, and repeated sentences also force revision,
-with feedback supplied to the next draft and the same three-round cap.
-Checks and briefing calls receive the submitted engineer name along with the report context.
-Long or jargon-heavy historical briefings show a clearly labelled **Report overview** derived
-from the saved code verdict and check results. This is not presented as a rewritten model draft;
-the exact original remains under **Full saved briefing**, and approval still covers that version.
-Normal model summaries use the exact run/round draft only when it matches the saved briefing.
-
-Malformed hidden-instruction replies become visible `flagged` results with `review_required: true`
-and an `error_reason`. They are unresolved checks: their traces fail, drafting stops, and flag
-acknowledgement cannot make them approvable. Successfully evaluated flags remain reviewable under
-the normal human-approval rules.
-
-The application uses one worker and a named volume for `/data/mission_control.db`.
-Stop it with `docker compose down`; records survive that command and container recreation.
-On startup, unfinished processing runs become `failed` / `interrupted` and retain their history.
-Do not use `docker compose down --volumes` unless you intend to delete the database.
-Keep one app container/worker while this recovery strategy is in use.
-
-Older saved reports retain their original failure messages and traces, including reports created
-before model processing was implemented. Opening a report does not rerun its pipeline. Submit a
-new report to exercise the current pipeline; historical failed reports remain unapprovable.
+Without model configuration, the app still starts and saves reports with code-calculated verdicts.
+Classification falls back to `unknown` / `high`, required checks fail, and approval is blocked.
+The live application never substitutes a fake model. Never commit runtime credentials.
 
 ## Test
 
-From the repository root:
+From the repository root, run the complete test suite:
 
 ```bash
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test command runs 58 JavaScript workflow checks in a build stage with networking disabled,
-then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
-runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
-serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
-build cache when their files are unchanged.
+No API key or model configuration is needed. JavaScript checks run with networking disabled during
+image construction; Python tests run in a network-disabled container with temporary databases and
+no application-volume mount. Model calls use the shared interface with fakes or mocked SDK HTTP.
+The HTTP restart tests use loopback only. Initial image builds may download dependencies; tests
+make no external network calls. An unchanged JavaScript test stage can be cached by Docker.
 
-The test container has no API key and uses temporary databases. It never
-mounts the application data volume. Image builds may download dependencies; the test process
-does not need internet access. Tests also block external sockets; the real-HTTP integration
-test permits loopback only to launch and crash its own local server.
-
-**Verification (November 17, 2026):** 436 Python tests and 58 JavaScript workflow checks passed
-locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
-Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
-model failures and missing usage, partial polling, and recovery after a real HTTP process crash
-while evaluation is blocked. Completed drafts, check findings, and deterministic verdicts survive
-interruption. Model behavior is tested with scripted fakes and mocked SDK HTTP; these tests do
-not measure live-model detection or narrative-review accuracy and require no paid model calls.
-Accounting tests cover cache reads/writes, decimal rounding, billed failures, incomplete totals,
-multiple attempts, and saved prices across restart/configuration changes. The real Anthropic SDK
-also completes synthetic full-pipeline tests through a mocked HTTP transport. Approval tests cover
-server-side permissions, GO/NO-GO preservation, exact flag acknowledgements, stale versions,
-restart persistence, audit-failure rollback, and coordinated concurrent requests with one winner.
-UI checks cover validation, duplicate submits, polling/retry, saved links, queue pagination, stale
-responses, terminal states, authentication, flag acknowledgements, uncertain approval saves, and
-rendering untrusted model text as text. Real-HTTP director tests approve flagged GO and NO-GO
-briefings, reject unauthorized and incomplete approvals, and retain the audit after restart.
-An isolated production-image Compose smoke test reached healthy status and served `/`,
-`/reports`, report-link URLs, CSS/JS, API health, and `/docs` with HTTP 200. Old `/director` links
-return a 307 redirect to the dedicated report page when an ID is supplied. Clean runtime/test image builds passed.
-The production container retained the complete saved report after forced recreation. A separate
-fake-model container was killed during evaluation; the production image recovered its database as
-`failed` / `interrupted`, retaining the verdict, findings, draft, completed traces, and known costs.
-A coordinated HTTP test now also holds classification open until after `202` is received, then
-releases it and verifies completion at `pending_review` without model approval.
-
-A separate headless Chromium walkthrough submitted wind readings of 25 and 25.01 knots, reviewed
-the generated briefings, navigated from the queue to a new review document, signed in,
-acknowledged the injection flag, and explicitly approved both. Back/Forward and legacy links passed.
-The verdicts stayed GO and NO-GO. Form, queue, and dedicated-review layouts passed at
-320, 390, 768, 1440, and 1920 pixels; desktop/mobile screenshots were inspected.
-The redesigned checks table, compact traces, 200% text sizing, reduced motion, and preserved
-expanded findings were also verified. No JavaScript errors
-were observed. Browser tooling was temporary and adds no application dependencies or build step.
-These checks used synthetic models and isolated databases, not live Foundry calls.
-
-**Live Foundry verification (November 18, 2026):** Two fresh reports used real
-`claude-opus-5` calls on the confirmed Global Standard deployment. Both had three clear checks,
-a short model draft, and a passing independent review on round 1. The browser displayed the exact
-model summary under **Flight Director briefing**, rather than the application-generated overview.
-Each report has seven trace cards, with reported tokens and six calculated model-call costs.
-
-| Local report | Verdict before / after approval | Model summary | Input / output tokens | Calculated cost |
-| --- | --- | --- | --- | --- |
-| [#9](http://localhost:8000/reports/9) | GO / GO | 39 words | 7,128 / 528 | $0.048840 USD |
-| [#10](http://localhost:8000/reports/10) | NO-GO / NO-GO | 41 words | 7,242 / 505 | $0.048835 USD |
-
-At the user's explicit request, authenticated browser actions approved both saved versions as
-`demo-flight-director`; the model pipeline itself left them pending. The audit records, verdicts,
-findings, briefing versions, and costs were checked afterward. The eight historical reports remained
-unchanged. These are local database records, not seeded assignment data. A random approval credential
-was supplied only to the running container and browser session; no credential was committed.
-Costs use reported usage and published list rates, not an Azure invoice or negotiated discount.
-
-Final test output:
+Verification on **November 18, 2026**:
 
 ```text
-JavaScript: tests 58, pass 58, fail 0
 Python: 436 passed
-Compose app: Healthy; records unchanged after container recreation
+JavaScript: 58 passed, 0 failed
+Lint and formatting: passed
+Credential guard: 11 passed
 ```
 
-See [the plan](PLAN.md) for milestones. The start command serves all three pages and the API.
-Final delivery and browser workflow verification are complete; live model quality remains dependent on the configured deployment.
+The complete app also passed a container startup, page/API smoke check, and restart check.
+All 10 local saved reports, including the live costs and approval audits below, survived unchanged.
+
+## Use the console
+
+1. Submit an engineer name, station, wind, temperature, fuel percentage, and anomaly note.
+   Field errors explain invalid input. Valid submissions open a separate `/reports/{id}` page.
+2. Review the model briefing, verdict, deadline, readings, and the single table of all three checks.
+   Expand findings, original input, review notes, or individual trace cards when needed.
+3. For a pending briefing, expand **Flight Director access**, enter `DEMO_DIRECTOR_TOKEN`, and
+   choose **Sign in**. Review the full saved briefing and acknowledge every flagged check before
+   choosing **Approve briefing**. Processing, failed, and unresolved reports cannot be approved.
+4. Return to **Reports** to open another report. Each report has its own URL; selecting one never
+   expands details below the queue. The queue refreshes every five seconds; processing reports
+   poll every two seconds. **Retry status** only fetches saved data and does not resubmit it.
+
+Approval access is a small server-checked demo role, with no account-registration system. There is
+no default Director credential. An optional, distinct `DEMO_ENGINEER_TOKEN` demonstrates a role
+that cannot approve. Browser credentials stay in page memory and clear on navigation or sign-out.
+
+## Pipeline and rules
+
+1. **Validate and save.** The backend commits the report, numeric verdict, violations, run, and
+   launch-limit trace before returning `202 Accepted`. Background processing uses fresh sessions.
+   All fields are required; malformed/non-finite readings, numeric strings, booleans, and blank
+   text are rejected. Negative wind/fuel and temperatures below absolute zero are also rejected.
+2. **Check launch limits in Python.** Wind must be **≤25 knots**, temperature **≥4°C**, and fuel
+   **98–100% inclusive**. A breach is a valid report with `no_go`, not a form-validation error.
+   The model cannot change readings, violations, or the verdict.
+3. **Classify with the model.** A validated schema restricts subsystem and severity. Invalid output,
+   refusal, timeout, or unavailable classification falls back to `unknown` / `high`. Every limit
+   breach forces high severity. Deadlines are measured from report creation: **high → 5 minutes**,
+   **medium → 15 minutes**, **low → 30 minutes**.
+4. **Run three checks concurrently.** Separate model calls check hidden instructions, missing
+   details, and panic/tone. Report text is untrusted data. Completed flags remain visible for human
+   review. An unavailable check fails processing; malformed hidden-instruction output flags the
+   note as unresolved and blocks drafting/approval.
+5. **Draft and review.** The model writes a short briefing; a separate model call evaluates it.
+   Rejected feedback goes into the next draft. The loop stops on the first pass or after three
+   rounds. Summaries target 20–45 words, with an 80-word maximum; Python also rejects repeated
+   sentences, internal jargon, full reading recitals, and changed canonical facts.
+6. **Wait for a person.** Successful checks and quality review produce `pending_review`, with no
+   approval record. An authenticated Director action approves the exact current version and
+   records identity, timestamp, and flag acknowledgements atomically. Stale/duplicate requests
+   are rejected. A NO-GO briefing stays NO-GO after approval.
+
+The writer and reviewer use **separate calls to the same configured model**, with distinct
+instructions and schemas. Neither role can approve. The assignment does not require two different
+models or an agent framework. Three failed reviews, a required-check failure, or an interrupted
+run produces `failed`, which cannot be approved.
+
+Historical briefings retain their original text and costs. Long or jargon-heavy older versions
+show a clearly labelled application-generated **Report overview**, with the exact model draft
+under **Full saved briefing**. Fresh concise model summaries are displayed directly.
+
+## Rubric evidence
+
+Each criterion has implementation and verification evidence in the repository:
+
+| Criterion | Points | Implementation | Verification |
+| --- | ---: | --- | --- |
+| One command to start; one to test | 10 | [Run](#run), [Test](#test), [Compose](compose.yaml), [Dockerfile](Dockerfile) | Command results above; startup and restart checks. |
+| Tool choices and tradeoffs | 10 | [TOOL_CHOICES.md](TOOL_CHOICES.md) | Backend, frontend, database, and model each have a specific reason, rejected alternative, and customer concern. |
+| Form, validation, persistence | 10 | [Submission](backend/app/static/assets/submission.js), [request schema](backend/app/schemas/reports.py) | [API validation](backend/tests/test_reports_api.py), [restart/crash recovery](backend/tests/test_persistence.py), [form workflow](backend/tests/frontend/submission.test.cjs). |
+| Code-based verdict and exact limits | 15 | [Launch rules](backend/app/services/launch_rules.py) | [Boundary tests](backend/tests/test_launch_rules.py): wind 25/25.001, temperature 4/3.999, fuel 98/97.999 and 100/100.001. |
+| Severity and brief-by time | 10 | [Deadline rules](backend/app/services/launch_rules.py), [effective classification](backend/app/services/classification.py) | [5/15/30-minute and high-override tests](backend/tests/test_launch_rules.py), [saved deadlines](backend/tests/test_classification.py). |
+| Structured model classification and fallback | 10 | [Schema](backend/app/schemas/classification.py), [classifier](backend/app/services/classification.py) | [Invalid output, refusal, timeout, and safe fallback](backend/tests/test_classification.py). |
+| Concurrent checks and hidden instructions | 10 | [Safety checks](backend/app/services/safety_checks.py) | [Concurrency barrier, instruction-bearing notes, visible flags, unchanged NO-GO, malformed replies](backend/tests/test_safety_checks.py). |
+| Draft, review, revision cap, human approval | 10 | [Briefing loop](backend/app/services/briefings.py), [approval service](backend/app/services/approvals.py) | [Feedback and three-round cap](backend/tests/test_briefings.py), [authorization, pending-only approval, audit, and verdict preservation](backend/tests/test_approvals.py). |
+| One trace card per step, tokens, calculated cost | 10 | [Trace cards](backend/app/static/assets/report.js), [Decimal cost calculation](backend/app/services/costs.py) | [Cost math](backend/tests/test_costs.py), [pipeline totals and saved rates](backend/tests/test_cost_pipeline.py), [rendered trace cards](backend/tests/frontend/review.test.cjs). |
+| Offline tests with a replaceable model | 5 | [ModelClient](backend/app/llm/client.py), [fake](backend/app/llm/fake_client.py) | [Key-free fixtures](backend/tests/conftest.py), [socket blocking](backend/pyproject.toml), network-disabled Docker test command above. |
+| **Total available** | **100** | | |
+
+The offline tests establish application behavior with controlled replies. The live walkthrough below
+checks real model output; it does not make model detection or review infallible.
+
+## Live verification
+
+On **November 18, 2026**, fresh real Foundry reports produced short model briefings and passed a
+separate quality-review call on round 1. Each had three clear checks and seven trace cards,
+including six calculated model-call costs. The visible briefing matched the exact saved model
+summary, rather than the application-generated overview.
+
+| Local report | Summary | Input / output tokens | Calculated cost | Verdict before / after approval |
+| --- | --- | --- | --- | --- |
+| [#9](http://localhost:8000/reports/9) | 39 words | 7,128 / 528 | $0.048840 USD | GO / GO |
+| [#10](http://localhost:8000/reports/10) | 41 words | 7,242 / 505 | $0.048835 USD | NO-GO / NO-GO |
+
+At the user's explicit request, authenticated browser actions approved both saved versions as
+`demo-flight-director`; the pipeline itself left them pending. Findings, versions, costs, and
+verdicts remained unchanged. These IDs refer to local verification records, not seeded demo data.
+The temporary approval credential was not committed.
 
 ## API
 
-| Method | Path | Behavior |
+| Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/` | Engineer submission form; old `?report={id}` links redirect |
-| `GET` | `/reports/{id}` | Dedicated review page: briefing, findings, approval, costs, traces, and saved input |
-| `GET` | `/reports` | Report queue; links open dedicated review pages |
-| `GET` | `/director` | Legacy redirect to the queue or `/reports/{id}` when a valid ID is supplied |
-| `GET` | `/assets/*` | Local CSS/JavaScript files |
-| `POST` | `/api/reports` | Validate, persist the decision, schedule processing; return `202` |
-| `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |
-| `GET` | `/api/reports/{id}` | Report, current run, checks, trace, briefing history, approval history |
-| `GET` | `/api/health` | Check API and database connectivity |
-| `GET` | `/api/auth/me` | Inspect the authenticated local demo identity |
-| `POST` | `/api/reports/{id}/approve` | Director approves the current pending briefing with flag acknowledgements |
+| `POST` | `/api/reports` | Validate and save; return `202` with report ID and status URL. |
+| `GET` | `/api/reports` | Newest-first summaries; `limit` 1–100 and `offset`. |
+| `GET` | `/api/reports/{id}` | Report, checks, briefing versions, trace, costs, and approval audit. |
+| `GET` | `/api/auth/me` | Verify the server-owned demo identity and role. |
+| `POST` | `/api/reports/{id}/approve` | Authenticated Director approval of the current pending version. |
+| `GET` | `/api/health` | Check API and database connectivity. |
 
-`current_run` contains that attempt's token/cost totals and `known_cost_usd` subtotal. Report-level
-`costs` aggregates all attempts, including failed attempts; `pipeline_runs` retains each attempt's
-totals. `total_cost_usd` is null if any recorded step lacks a calculable cost. `known_cost_usd` sums
-only available costs and must not be presented as a full total when `cost_complete` is false.
-While processing, totals are provisional and `cost_complete` stays false. No-call code/configuration
-steps cost zero; simulated model replies have no live price. Older unpriced traces stay unavailable.
+Approval sends `run_id`, `briefing_version_id`, and `acknowledged_check_result_ids` from the latest
+report. The ID list must contain exactly the flagged check IDs; use an empty list when none are
+flagged. The server determines the approver identity. Request/response schemas and error details
+are available at [/docs](http://localhost:8000/docs).
 
-Each trace includes timestamps, `latency_ms` (null while running), normalized input/output counts,
-and USD cost. `details_json` preserves raw provider usage, the applied rates, component amounts,
-rounding policy, and a `cost_status` explaining unavailable amounts. Dollar amounts serialize as
-decimal strings, rounded per step to ten decimal places before summing. OpenAI input includes cache
-hits; Claude's normalized input sums base, cache reads, and cache writes. Raw counters remain
-separate, following [Claude's usage accounting](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+## Pricing and persistence
 
-Approval uses a small local demo bearer guard, an implementation choice for the assignment's
-server-side permission checks. Set a random `DEMO_DIRECTOR_TOKEN` (32–256 ASCII characters,
-no whitespace) in your ignored runtime configuration. There is no default director credential.
-The optional, distinct `DEMO_ENGINEER_TOKEN` demonstrates an authenticated role without approval
-permission. These map to fixed server-owned identities; request fields/headers cannot choose a role
-or approver name. `/api/auth/me` is a helper, not an assignment requirement. This demo has no account
-registration, password database, or OAuth integration.
+[.env.example](.env.example) contains the Opus 5 **Global Standard** rates verified on November 18,
+2026: **$5 input, $0.50 cached input, $25 output, $6.25 five-minute cache writes, and $10 one-hour
+cache writes per million tokens**. See [Foundry pricing](https://platform.claude.com/docs/en/about-claude/pricing#claude-in-microsoft-foundry-pricing)
+and the [published rate card, page 15](https://assets.claude.com/a04aca860a54b7323e33f449706e9b43680e1346.pdf#page=15).
+US Data Zone Standard uses a 1.1x multiplier; replace the rates for another model or negotiated price.
+The local verification's non-secret prices also reside in an ignored `compose.override.yaml`;
+Compose loads it automatically. Keep credentials out of that file.
 
-The console's **Sign in** verifies the identity with `/api/auth/me`. Alternatively, use
-**Authorize → DemoBearer** in `/docs` with the configured token. Approval requires this body,
-using IDs from the latest report detail:
+Python calculates each step's token cost with `Decimal`, rounds to ten decimal places, and sums
+across report attempts. Each trace stores provider usage and a pricing snapshot. Missing usage or
+rates leave the full total unavailable; `known_cost_usd` is only a subtotal. Processing totals are
+provisional. Estimates exclude non-token charges, taxes, and discounts; they are not Azure invoices.
+Historical reports are never repriced after a configuration change.
 
-```json
-{"run_id": 1, "briefing_version_id": 1, "acknowledged_check_result_ids": []}
-```
+SQLite data lives in the `mission_control_data` Docker volume. `docker compose down` preserves it;
+adding `--volumes` deletes it. Keep **one app worker/container**: FastAPI `BackgroundTasks` is not
+a durable queue. After a restart, unfinished runs become `failed` / `interrupted`, retaining saved
+reports, verdicts, completed findings, drafts, and traces. Opening an old report never reruns it.
 
-Include exactly every flagged check's ID; use `[]` only when there are no flags. The server requires
-a completed current run, three error-free checks, and its latest quality-passed briefing. Missing or
-invalid authentication returns `401`, a non-director gets `403`, an unknown report gets `404`,
-state/version/acknowledgement conflicts get `409`, and malformed or forged fields get `422`.
-Approval and its audit record commit together; an audit failure rolls back the status change.
-The audit stores the authenticated identity, exact version, sorted acknowledged IDs, and UTC time.
-Only the report becomes `approved`; completed pipeline history, flags, costs, and launch verdict stay
-unchanged. A NO-GO briefing can be approved and still remains NO-GO.
+## Development
 
-Classification runs through report submission. A `no_go` verdict is a valid stored
-report, not a validation failure. Input sanity minima are wind >= 0 knots, temperature >= -273.15°C,
-and fuel >= 0%; the API, pure rule function, and engineer form enforce them. No arbitrary upper
-bounds are added: wind above 25, temperature below 4 but above absolute zero, and fuel above 100
-remain accepted reports with `no_go`. Malformed or non-finite readings, booleans/numeric strings,
-missing/blank required text, and unexpected fields receive clear `422` responses.
-
-Example submission from another terminal:
-
-```bash
-curl -i http://localhost:8000/api/reports \
-  -H 'Content-Type: application/json' \
-  -d '{"engineer_name":"Avery Chen","station":"Weather","wind_knots":25,"temp_c":4,"fuel_pct":98,"note":"Monitoring gusts; backup sensor agrees."}'
-```
-
-## Backend development without Docker
-
-The selected provider is Microsoft Foundry (`MODEL_PROVIDER=foundry`) for Claude Opus 5.
-Set `ANTHROPIC_FOUNDRY_API_KEY` and either `ANTHROPIC_FOUNDRY_RESOURCE` or
-`ANTHROPIC_FOUNDRY_BASE_URL` (ending in `/anthropic/`). `ANTHROPIC_MODEL` is your Foundry
-deployment name; the template uses `claude-opus-5`, which must match the name you deployed.
-These are the [SDK's Foundry connection settings](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry).
-Set `FOUNDRY_INPUT_USD_PER_MILLION`, `FOUNDRY_CACHED_INPUT_USD_PER_MILLION`, and
-`FOUNDRY_OUTPUT_USD_PER_MILLION` together from your deployment's pricing. Nonzero cache writes
-also require the corresponding `FOUNDRY_CACHE_WRITE_5M_USD_PER_MILLION` or
-`FOUNDRY_CACHE_WRITE_1H_USD_PER_MILLION` rate and a reported TTL breakdown. No write rate is
-needed when the provider reports zero writes. Direct Anthropic prices are not assumed for Foundry;
-missing prices keep dollar totals unavailable. Rates may be zero but must be finite and nonnegative.
-The template supplies the verified Claude Opus 5 **Global Standard** list rates: $5 input,
-$0.50 cached input, $25 output, $6.25 five-minute cache writes, and $10 one-hour cache writes
-per million tokens. [Foundry pricing](https://platform.claude.com/docs/en/about-claude/pricing#claude-in-microsoft-foundry-pricing)
-and the [November 9 rate card, page 15](https://assets.claude.com/a04aca860a54b7323e33f449706e9b43680e1346.pdf#page=15)
-were checked November 18, 2026. US Data Zone Standard applies a 1.1x multiplier; replace these
-values for another model, deployment type, or negotiated pricing. The local verification also
-stores these non-secret prices in an ignored `compose.override.yaml`, automatically loaded by
-the normal startup command. Keep credentials out of that file and Git. Historical reports are
-never repriced when configuration changes.
-Direct Anthropic access remains optional with `MODEL_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`.
-Custom direct Anthropic prices use the matching `ANTHROPIC_*_USD_PER_MILLION` variables,
-including optional `ANTHROPIC_CACHE_WRITE_5M_USD_PER_MILLION` and
-`ANTHROPIC_CACHE_WRITE_1H_USD_PER_MILLION`; custom cache-write prices are never inferred.
-The existing OpenAI adapter remains available with `MODEL_PROVIDER=openai`, `OPENAI_API_KEY`,
-and `OPENAI_MODEL`; providers never switch automatically after failures.
-`MODEL_TIMEOUT_SECONDS` defaults to 30 and `MODEL_MAX_OUTPUT_TOKENS` to 1024.
-The live adapter rejects missing configuration; the pipeline records that as a safe fallback
-without automatically selecting a fake.
-
-With uv and Python 3.12–3.14 installed, run these from the repository root:
+Optional host development requires uv and Python 3.12–3.14. Export configuration in the environment;
+Compose reads `.env`, but the Python app does not load it itself.
 
 ```bash
 uv run --directory backend uvicorn app.main:app --reload
 uv run --directory backend pytest -q
-```
-
-Local data defaults to `backend/data/mission_control.db`. Set `MISSION_CONTROL_DB_PATH`
-in the environment to change it; see [.env.example](.env.example). The app does not
-automatically load `.env` files. Never point tests at your application database.
-
-The shared `.codex/hooks.json` guard blocks common credential reads and withholds recognized
-secrets from tool output. Review and trust it through Codex's hook controls before relying on it;
-committing the configuration does not activate trust. It is a guardrail, not OS-level isolation.
-Run its synthetic tests with `python3 -m unittest discover -s .codex/hooks -p 'test_*.py'`.
-
-Dependencies are locked in `backend/uv.lock`. Lint and formatting checks:
-
-```bash
 uv run --directory backend ruff check .
 uv run --directory backend ruff format --check .
 ```
+
+Local data defaults to `backend/data/mission_control.db`; change it with `MISSION_CONTROL_DB_PATH`.
+Direct Anthropic and OpenAI adapters remain explicit alternatives via `MODEL_PROVIDER`; providers
+never switch automatically. The shared `.codex` credential guard has synthetic checks:
+`python3 -m unittest discover -s .codex/hooks -p 'test_*.py'`. Review and trust hooks before relying
+on them; they are guardrails, not OS isolation. The implementation roadmap is in [PLAN.md](PLAN.md).

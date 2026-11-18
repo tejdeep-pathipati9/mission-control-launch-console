@@ -17,7 +17,7 @@
 | Validation | Pydantic | Strong input and structured model-output schemas |
 | Database | SQLite | Persistent local storage with no separate database server |
 | ORM | SQLAlchemy 2.x | Explicit models, relationships, transactions, easy testing |
-| AI | Claude Opus 5 through Microsoft Foundry behind `ModelClient`; optional direct adapters retained | User-selected provider, structured outputs, and a replaceable fake for offline tests |
+| AI | Claude Opus 5 through Microsoft Foundry behind `ModelClient`; optional direct adapters retained | Reuses the existing Foundry deployment, supports structured outputs, and permits offline fakes |
 | Concurrency | `asyncio.gather()` | Run the three independent note checks concurrently |
 | Tests | pytest + pytest-asyncio + FastAPI TestClient/httpx | Fast, offline tests for API and pipeline behavior |
 | Package management | uv | Reproducible project setup without installing into system Python |
@@ -210,7 +210,7 @@ Each branch delivers one focused change with its related tests and documentation
 - [x] Fail safely on malformed output, unrecognized enum values, and call failures.
 - [x] Connect classification to effective severity and persist its deadline from original report creation, using the tested Milestone 2 helpers.
 - [x] Record model usage for each completed call.
-- [x] Select `gpt-5.4-mini-2026-03-17` and document configurable pricing. Store the actual model identifier, applicable rates, and usage availability per model trace step. Feature 5 now calculates costs; historical unpriced traces remain unavailable. Adapter behavior is tested with mocked HTTP; scripted tests do not measure live-model quality.
+- [x] Select a model and document configurable pricing. Store the actual model identifier, applicable rates, and usage availability per model trace step. Feature 5 now calculates costs; historical unpriced traces remain unavailable. Adapter behavior is tested with mocked HTTP; scripted tests do not measure live-model quality.
 
 **Provider update:** Claude Opus 5 now runs through Microsoft Foundry: `MODEL_PROVIDER=foundry`, `ANTHROPIC_FOUNDRY_API_KEY`, and either a Foundry resource name or `/anthropic/` base URL. `ANTHROPIC_MODEL` must match the deployment name. Foundry rates are deployment configuration, not inferred from direct Anthropic pricing. Optional direct adapters never act as automatic fallback.
 
