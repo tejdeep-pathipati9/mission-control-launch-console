@@ -3,8 +3,7 @@
 Meridian Launch Services anomaly-report console. The backend foundation, classification,
 concurrent note checks, briefing review, cost accounting, and human approval are implemented.
 The engineer form, separate report page, and Flight Director console use plain HTML/CSS, with small
-JavaScript files for submission, polling, and approval. All pages use a white background
-and black text. This demo is not certified launch software. Briefing approval never authorizes
+JavaScript files for submission, polling, and approval. The UI uses neutral surfaces, red for failures/NO-GO, and amber for review warnings. This demo is not certified launch software. Briefing approval never authorizes
 a launch or changes a verdict.
 
 ## Start
@@ -29,6 +28,12 @@ returns to the list, and browser Back/Forward work normally. The queue refreshes
 a processing report polls every two seconds. Old `/director?report={id}` and `/reports?report={id}`
 bookmarks redirect to the dedicated page. Costs distinguish complete totals from partial or
 unavailable amounts. Approval access appears on the review page when a briefing is pending.
+
+The review page uses the viewport width: a concise briefing and one checks table sit beside a
+sidebar for readings, deadline, approval, and cost. One compact trace card per step shows duration,
+input/output tokens, and cost; timestamps and raw execution data expand on demand. Full findings,
+review notes, original input, and saved briefings remain accessible without filling the main view.
+The layout stacks on smaller screens and supports larger text and reduced-motion preferences.
 
 For approval, configure `DEMO_DIRECTOR_TOKEN` in your ignored runtime configuration, then enter it
 in the collapsed **Approval access** panel and choose **Sign in**. This approval access key is
@@ -73,6 +78,11 @@ Foundry model. They use distinct instructions and structured schemas; the review
 proposed draft, original report, checks, and canonical facts. Rejected feedback goes into the next
 writer call, with at most three writer/reviewer pairs. Two different models or an autonomous-agent
 framework are not required by the assignment. Neither role can approve a briefing.
+New summaries target 40–60 words. Python rejects summaries over 80 words even if the reviewer
+passes them, feeds readability feedback into the next draft, and retains the three-round cap.
+Checks and briefing calls receive the submitted engineer name along with the report context.
+Long historical briefings use a labelled 50-word excerpt; the exact saved version is retained.
+The short view uses the exact run/round draft only when it matches the saved briefing.
 
 Malformed hidden-instruction replies become visible `flagged` results with `review_required: true`
 and an `error_reason`. They are unresolved checks: their traces fail, drafting stops, and flag
@@ -97,7 +107,7 @@ From the repository root:
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test command runs 51 JavaScript workflow checks in a build stage with networking disabled,
+The test command runs 55 JavaScript workflow checks in a build stage with networking disabled,
 then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
 runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
 serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
@@ -108,7 +118,7 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 428 Python tests and 51 JavaScript workflow checks passed
+**Verification (November 17, 2026):** 431 Python tests and 55 JavaScript workflow checks passed
 locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
@@ -137,15 +147,17 @@ A separate headless Chromium walkthrough submitted wind readings of 25 and 25.01
 the generated briefings, navigated from the queue to a new review document, signed in,
 acknowledged the injection flag, and explicitly approved both. Back/Forward and legacy links passed.
 The verdicts stayed GO and NO-GO. Form, queue, and dedicated-review layouts passed at
-320, 390, 768, and 1440 pixels; desktop/mobile screenshots were inspected. No JavaScript errors
+320, 390, 768, 1440, and 1920 pixels; desktop/mobile screenshots were inspected.
+The redesigned checks table, compact traces, 200% text sizing, reduced motion, and preserved
+expanded findings were also verified. No JavaScript errors
 were observed. Browser tooling was temporary and adds no application dependencies or build step.
 These checks used synthetic models and isolated databases, not live Foundry calls.
 
 Final test output:
 
 ```text
-JavaScript: tests 51, pass 51, fail 0
-Python: 428 passed
+JavaScript: tests 55, pass 55, fail 0
+Python: 431 passed
 Compose app: Healthy; records unchanged after container recreation
 ```
 

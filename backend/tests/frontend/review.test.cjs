@@ -44,16 +44,72 @@ function approved(data = ready()) {
 const savedApproval = (version = 21) => reply({ report_id: 7, run_id: 10, status: "approved",
   approval: { briefing_version_id: version } });
 
+test("briefing uses its exact draft summary while the full saved version remains accessible", async () => {
+  const data = ready();
+  data.latest_briefing.content = "Anomaly summary: Wind is above its launch limit. Verify the sensor and resolve the flagged instructions.\nSubsystem: weather\nFlagged checks: retained in full.";
+  data.trace = [{ id: 1, run_id: 10, step_name: "draft", status: "completed", latency_ms: 8089,
+    input_tokens: 1890, output_tokens: 550, cost_usd: null,
+    details_json: { round_number: 1, validated_output: { summary: "Wind is above its launch limit. Verify the sensor and resolve the flagged instructions." } } }];
+  const ui = harness([reply(data)], "/reports/7");
+  await flush();
+  assert.match(ui.el("briefing-content").textContent, /^Wind is above/);
+  assert.doesNotMatch(ui.el("briefing-content").textContent, /Subsystem:|Flagged checks:/);
+  assert.equal(ui.el("briefing-full-content").textContent, data.latest_briefing.content);
+  assert.equal(ui.el("briefing-excerpt").hidden, true);
+  assert.match(ui.el("trace-cards").textContent, /8\.1 s/);
+  assert.match(ui.el("trace-cards").textContent, /1,890 \/ 550/);
+});
+
+test("a verbose legacy briefing is a labelled excerpt with all original text retained", async () => {
+  const data = ready();
+  data.latest_briefing.content = "Observation ".repeat(120) + "Retain the complete original.";
+  const ui = harness([reply(data)], "/reports/7");
+  await flush();
+  assert.equal(ui.el("briefing-excerpt").hidden, false);
+  assert.equal(ui.el("briefing-content").textContent.split(/\s+/).length, 50);
+  assert.equal(ui.el("briefing-full-content").textContent, data.latest_briefing.content);
+  assert.equal(ui.el("verdict").textContent, "NO-GO");
+  assert.match(ui.el("verdict").className, /danger/);
+});
+
+test("another attempt or round cannot replace the current briefing summary", async () => {
+  const data = ready();
+  data.trace = [
+    { run_id: 99, step_name: "draft", status: "completed", details_json: { round_number: 1, validated_output: { summary: "Wrong attempt" } } },
+    { run_id: 10, step_name: "draft", status: "completed", details_json: { round_number: 2, validated_output: { summary: "Wrong round" } } },
+  ];
+  const ui = harness([reply(data)], "/reports/7");
+  await flush();
+  assert.equal(ui.el("briefing-content").textContent, data.latest_briefing.content);
+});
+
+test("all checks share one table and expanded findings survive a same-version refresh", async () => {
+  const data = ready();
+  const ui = harness([reply(data), identity(), reply(data)], "/reports/7");
+  await flush();
+  assert.equal(ui.el("check-cards").children.length, 3);
+  assert.equal(ui.el("findings-injection").open, false);
+  ui.el("findings-injection").open = true;
+  await connect(ui);
+  ui.change("ack-check-101", true);
+  ui.click("refresh-report");
+  await flush();
+  assert.equal(ui.el("findings-injection").open, true);
+  assert.equal(ui.el("ack-check-101").checked, true);
+  assert.equal(ui.el("approve-briefing").disabled, false);
+});
+
 test("a historical failed report shows unavailable stages and no approval form", async () => {
   const data = report({ status: "failed", subsystem: null, checks: [],
     current_run: { failure_message: "Model processing is not implemented in this milestone." } });
   const ui = harness([reply(data)], "/reports/7");
   await flush();
   assert.equal(ui.el("subsystem").textContent, "Unavailable");
-  assert.match(ui.el("check-cards").textContent, /No checks were recorded/);
+  assert.equal(ui.el("checks-empty").hidden, false);
+  assert.equal(ui.el("check-cards").children.length, 3);
   assert.equal(ui.el("approval-form").hidden, true);
   assert.equal(ui.el("director-access").hidden, true);
-  assert.match(ui.el("status-message").textContent, /not implemented in this milestone/);
+  assert.match(ui.el("failure-detail").textContent, /not implemented in this milestone/);
   assert.equal(ui.el("queue-body"), undefined);
   assert.equal(ui.requests.length, 1);
 });
@@ -69,12 +125,13 @@ test("trace has one card per step, preserves unavailable counts/costs, and displ
   await flush();
   const cards = ui.el("trace-cards").children;
   assert.equal(cards.length, 2);
-  assert.match(cards[0].textContent, /cost: \$0.00 USD/);
+  assert.match(cards[0].textContent, /\$0.00/);
   assert.match(cards[1].textContent, /round 2/);
-  assert.match(cards[1].textContent, /Input tokens: Unavailable/);
+  assert.match(cards[1].textContent, /— \/ —/);
   assert.match(cards[1].textContent, /<script>/);
   assert.match(ui.el("cost-summary").textContent, /Known subtotal: \$0.00 USD/);
-  assert.match(ui.el("cost-summary").textContent, /Recorded total .*: Unavailable/);
+  assert.match(ui.el("cost-summary").textContent, /Unavailable/);
+  assert.equal(cards[1].children[0].open, false);
 });
 
 test("draft history, full findings, and approval audit remain inspectable", async () => {

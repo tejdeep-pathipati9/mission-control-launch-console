@@ -229,7 +229,7 @@ Each branch delivers one focused change with its related tests and documentation
 
 ### Milestone 5 — Briefing generation and quality review
 
-- [x] Draft a concise briefing with anomaly summary, subsystem, severity, verdict, violations, and deadline.
+- [x] Draft a 40–60 word narrative with canonical facts supplied separately. Enforce an 80-word maximum in code; feed readability rejections into the same three-round revision loop, even if the model reviewer passes the draft.
 - [x] Validate that generated text cannot replace the canonical verdict/violations stored by Python.
 - [x] Evaluate each draft using a separate model call with structured feedback.
 - [x] Feed evaluator comments to the next drafting round, stopping on pass or after three rounds.
@@ -262,10 +262,10 @@ Each branch delivers one focused change with its related tests and documentation
 
 - [x] Select plain HTML/CSS with minimal vanilla JavaScript for the small static-page UI.
 
-**UI decision:** Plain white background, black system-font text, simple borders, readable spacing, and native form/button controls. Keep the interface responsive and keyboard accessible. Use labels and text for status rather than relying on color. No component library, dashboard theme, charts, or decorative effects.
+**UI decision:** Use the apple-design skill’s hierarchy, system typography, restraint, immediate feedback, and accessibility principles. Full-width report review uses a main column and sidebar, a single checks table, and compact trace cards with expandable audit details. Keep neutral surfaces; reserve red for failures/NO-GO and amber for review warnings, always paired with labels. Summaries lead, detailed findings and raw metadata expand on demand. Honor larger text and reduced motion. No component library, frontend build system, charts, or decorative animation.
 
 1. **Engineer page (`/`):** Show the input form and validation errors. A successful submission navigates to its separate report page.
-2. **Report review page (`/reports/{id}`):** Display the original submission, status, verdict/violations, deadline, findings, briefing versions, one trace card per step with tokens/cost, and explicit approval with flag acknowledgements. Keep polling and GET-only retry here. All reports returns to the queue; New report returns to the form. Put approval access in a collapsed panel for pending briefings and keep its token in page memory. Failed reports show unavailable stages and no approval form.
+2. **Report review page (`/reports/{id}`):** Use the full viewport width with the briefing, a single checks table, and compact trace cards in the main column; readings, deadline, approval, and costs occupy a sidebar. Keep complete findings, timestamps, raw execution data, original input, and saved versions accessible through disclosures. New summaries are limited to 80 words; long historical versions use labelled excerpts without modifying stored content. Keep polling and GET-only retry here. All reports returns to the queue; New report returns to the form. Put approval access in a collapsed panel for pending briefings and keep its token in page memory. Failed reports show unavailable stages and no approval form.
 3. **Report queue (`/reports`):** Show the paginated list only. Use normal links to open `/reports/{id}` as a new document, with working browser Back/Forward. Old `/?report={id}`, `/director?report={id}`, and `/reports?report={id}` bookmarks redirect to the dedicated report page. Old `/director` without an ID redirects to the queue.
 
 Use small local JavaScript files for `fetch`, form submission, selection, and two-second polling while processing. Render untrusted report/model text as text, not executable HTML. The pages and assets ship with the Python app; no frontend compilation or external asset downloads are required.
@@ -290,11 +290,11 @@ Use small local JavaScript files for `fetch`, form submission, selection, and tw
 
 - [x] Document one root-level Docker Compose command to start the complete app and one to run all tests, with prerequisites, runtime configuration, browser URL, and offline-test details in `README.md`.
 - [x] Complete `TOOL_CHOICES.md` with backend, frontend, database, and model reasons, rejected alternatives, and customer concerns.
-- [x] Verify all tests without live credentials or internet access: 428 Python tests and 51 JavaScript checks pass locally and in network-disabled Docker stages; lint/formatting and 11 credential-hook tests pass.
+- [x] Verify all tests without live credentials or internet access: 431 Python tests and 55 JavaScript checks pass locally and in network-disabled Docker stages; lint/formatting and 11 credential-hook tests pass.
 - [x] Verify Compose configuration, clean runtime/test image builds, app health, all pages/assets, and complete report persistence after container recreation. Kill a separate fake-model container during evaluation, then recover its volume using the production image; preserve original verdict, completed findings/draft/traces, and known costs as `failed` / `interrupted`.
 - [x] Hold classification on a test-owned gate, receive real HTTP `202`, inspect the processing report, release the gate, and poll the complete pipeline to `pending_review` without automatic approval.
 - [x] Verify boundary/deadline, classifier fallback, concurrent checks, injection, three-round feedback/cap, approval permissions, trace, cost, and restart coverage against `ASSIGNMENT.md`.
-- [x] Run a browser demo of wind 25 and 25.01 knots through separate report pages, native queue-to-detail navigation, Back/Forward, sign-in, explicit flag acknowledgement, and approval. GO/NO-GO remain unchanged. Inspect screenshots and check form/queue/review layouts at 320, 390, 768, and 1440 pixels. This is an automated Chromium walkthrough with visual inspection, not a live-model quality evaluation.
+- [x] Run a browser demo of wind 25 and 25.01 knots through separate report pages, native queue-to-detail navigation, Back/Forward, sign-in, explicit flag acknowledgement, and approval. GO/NO-GO remain unchanged. Inspect screenshots and check form/queue/review layouts at 320, 390, 768, 1440, and 1920 pixels; also verify 200% text and reduced motion. This is an automated Chromium walkthrough with visual inspection, not a live-model quality evaluation.
 
 **Feature 9 evidence:** See the [README verification note](README.md#test). Browser tooling and screenshots are temporary verification artifacts; application dependencies and the runtime image remain unchanged.
 

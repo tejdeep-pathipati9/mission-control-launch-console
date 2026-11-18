@@ -2,7 +2,7 @@
 
 (() => {
   const { requestJson, setText, validId } = window.MissionControl;
-  const { renderReport, utcTime, usd, checkLabels } = window.MissionReportView;
+  const { renderReport, utcTime, usd, checkLabels, excerpt, tokens, duration } = window.MissionReportView;
   const match = location.pathname.match(/^\/reports\/([1-9]\d*)\/?$/);
   const selectedId = match && validId(Number(match[1])) ? Number(match[1]) : null;
   let selectedReport = null;
@@ -35,30 +35,60 @@
     return result;
   }
 
-  function card(title) {
-    const element = node("article");
-    element.className = "detail-card";
-    element.append(node("h3", title));
-    return element;
-  }
-
   function renderChecks(report) {
+    const focused = document.activeElement?.id;
+    const kinds = ["injection", "missing_details", "panic"];
+    const expanded = new Set(kinds.filter((kind) => document.getElementById(`findings-${kind}`)?.open));
     const container = document.getElementById("check-cards");
     container.replaceChildren();
-    if (!report.checks.length) container.append(node("p", "No checks were recorded for this run."));
+    document.getElementById("checks-empty").hidden = report.checks.length > 0;
     checkboxes.clear();
-    for (const check of report.checks) {
-      const element = card(`${checkLabels[check.check_type] ?? check.check_type} — ${check.outcome}`);
-      element.append(node("p", check.reason));
-      element.append(list(check.details_json?.findings ?? []));
-      if (check.details_json?.error_reason) element.append(node("p", `Evaluation unresolved: ${check.details_json.error_reason}`));
-      if (check.outcome === "flagged") {
+    for (const kind of kinds) {
+      const check = report.checks.find((value) => value.check_type === kind);
+      const row = node("tr");
+      const heading = node("th", checkLabels[kind]);
+      heading.setAttribute("scope", "row");
+      row.append(heading);
+      const state = node("td");
+      const unresolved = check?.details_json?.error_reason != null;
+      const label = check ? (unresolved ? "Unresolved" : { clear: "Clear", flagged: "Flagged", error: "Unavailable" }[check.outcome]) : (report.status === "processing" ? "Pending" : "Not run");
+      const badge = node("span", label);
+      badge.className = `status-badge ${unresolved || check?.outcome === "error" ? "danger" : check?.outcome === "flagged" ? "warning" : ""}`;
+      state.append(badge);
+      row.append(state);
+      const findingsCell = node("td");
+      if (check) {
+        const disclosure = node("details");
+        disclosure.id = `findings-${kind}`;
+        disclosure.className = "check-findings";
+        disclosure.open = expanded.has(kind);
+        const summary = node("summary");
+        summary.id = `check-summary-${kind}`;
+        const findings = check.details_json?.findings ?? [];
+        if (check.outcome === "clear") summary.append(node("span", "No concerns · why clear?"));
+        else {
+          const preview = excerpt(check.reason, 18).text;
+          summary.append(node("span", preview.length > 140 ? preview.slice(0, 140) + "…" : preview));
+          summary.append(node("small", `${findings.length} finding${findings.length === 1 ? "" : "s"} · View details`));
+        }
+        disclosure.append(summary);
+        disclosure.append(node("p", check.reason));
+        if (findings.length) disclosure.append(list(findings));
+        if (unresolved) disclosure.append(node("p", `Evaluation unresolved: ${check.details_json.error_reason}. Approval is blocked.`));
+        findingsCell.append(disclosure);
+      } else findingsCell.append(node("span", "No result recorded"));
+      row.append(findingsCell);
+      const reviewCell = node("td");
+      reviewCell.className = check?.outcome === "flagged" ? "check-review" : "check-no-review";
+      if (check?.outcome === "flagged") {
         const label = node("label");
         label.className = "acknowledgement";
+        label.hidden = report.status !== "pending_review";
         const checkbox = node("input");
         checkbox.type = "checkbox";
         checkbox.id = `ack-check-${check.id}`;
         checkbox.setAttribute("form", "approval-form");
+        checkbox.setAttribute("aria-label", `I acknowledge the ${checkLabels[kind]} flag and all its listed findings`);
         checkbox.checked = acknowledgements.has(check.id);
         checkbox.addEventListener("change", () => {
           if (checkbox.checked) acknowledgements.add(check.id);
@@ -67,40 +97,53 @@
         });
         checkboxes.set(check.id, checkbox);
         label.append(checkbox);
-        label.append(node("span", `I acknowledge this ${checkLabels[check.check_type] ?? check.check_type} flag and all its listed findings.`));
-        element.append(label);
-      }
-      container.append(element);
+        label.append(node("span", "Acknowledge"));
+        reviewCell.append(label);
+        if (report.status !== "pending_review") {
+          const acknowledged = report.approvals.some((audit) => audit.acknowledged_flags_json.includes(check.id));
+          reviewCell.append(node("small", acknowledged ? "Reviewed" : "Blocked"));
+        }
+      } else reviewCell.append(node("span", "—"));
+      row.append(reviewCell);
+      container.append(row);
     }
+    if (focused?.startsWith("check-summary-") || focused?.startsWith("ack-check-")) document.getElementById(focused)?.focus();
   }
 
   function renderHistory(report) {
     const latest = report.latest_briefing;
     const feedback = latest?.evaluator_feedback;
-    document.getElementById("latest-feedback").replaceChildren(...list([
-      ...(feedback?.feedback ?? []), ...(feedback?.canonical_issues ?? []),
-      ...(feedback?.error_reason ? [`Evaluation unavailable: ${feedback.error_reason}`] : []),
-    ]).children);
+    const notes = [...(feedback?.feedback ?? []), ...(feedback?.canonical_issues ?? []), ...(feedback?.readability_issues ?? []),
+      ...(feedback?.error_reason ? [`Evaluation unavailable: ${feedback.error_reason}`] : [])];
+    document.getElementById("latest-feedback").replaceChildren(...list(notes).children);
+    document.getElementById("review-notes").hidden = notes.length === 0;
     const previous = report.briefing_versions.filter((version) => version.id !== latest?.id);
     const container = document.getElementById("draft-history");
     container.replaceChildren();
     document.getElementById("older-drafts").hidden = previous.length === 0;
     setText("draft-history-label", `Earlier drafts (${previous.length})`);
     for (const version of previous) {
-      const element = card(`Draft ${version.round_number} — ${version.quality_passed ? "quality passed" : "quality not passed"}`);
+      const element = node("details");
+      element.className = "history-entry";
+      element.append(node("summary", `Round ${version.round_number} · ${version.quality_passed ? "passed" : "not passed"}`));
       element.append(node("pre", version.content));
       const notes = version.evaluator_feedback;
-      element.append(list([...(notes?.feedback ?? []), ...(notes?.canonical_issues ?? []),
+      element.append(list([...(notes?.feedback ?? []), ...(notes?.canonical_issues ?? []), ...(notes?.readability_issues ?? []),
         ...(notes?.error_reason ? [`Evaluation unavailable: ${notes.error_reason}`] : [])]));
       container.append(element);
     }
     const audits = document.getElementById("approval-history");
     audits.replaceChildren();
-    if (!report.approvals.length) audits.append(node("p", "No human approval has been recorded."));
+    document.getElementById("audit-section").hidden = report.approvals.length === 0;
     for (const approval of report.approvals) {
-      const element = card(`Briefing version #${approval.briefing_version_id}`);
-      element.append(node("p", `Approved by ${approval.approved_by} at ${utcTime(approval.approved_at)}.`));
-      element.append(node("p", `Acknowledged check IDs: ${approval.acknowledged_flags_json.join(", ") || "None"}.`));
+      const element = node("div");
+      element.append(node("p", `${approval.approved_by} · version #${approval.briefing_version_id}`));
+      element.append(node("small", utcTime(approval.approved_at)));
+      const details = node("details");
+      details.className = "cost-audit";
+      details.append(node("summary", "Acknowledgements"));
+      details.append(node("p", `Check IDs: ${approval.acknowledged_flags_json.join(", ") || "None"}`));
+      element.append(details);
       audits.append(element);
     }
   }
@@ -108,35 +151,80 @@
   function renderCosts(report) {
     const container = document.getElementById("cost-summary");
     container.replaceChildren();
-    const summaries = [["Report cost", report.costs]];
-    if (report.pipeline_runs.length > 1) summaries.push(["Current attempt", report.current_run]);
-    for (const [title, costs] of summaries) {
-      const element = card(title);
-      element.append(node("p", `${costs.cost_complete ? "Total" : "Recorded total (incomplete or provisional)"}: ${usd(costs.total_cost_usd)}.`));
-      element.append(node("p", `Known subtotal: ${usd(costs.known_cost_usd)}. This subtotal excludes unavailable costs.`));
-      element.append(node("p", `Input tokens: ${costs.total_input_tokens ?? "Unavailable"}; output tokens: ${costs.total_output_tokens ?? "Unavailable"}.`));
-      container.append(element);
+    const costs = report.costs;
+    const amount = node("strong", costs.cost_complete ? usd(costs.total_cost_usd).replace(" USD", "") : "Unavailable");
+    amount.className = "cost-amount";
+    container.append(amount);
+    const label = node("p", costs.cost_complete ? "Recorded total · USD" : "Usage or pricing is incomplete.");
+    label.className = "cost-label";
+    container.append(label);
+    const counts = node("div");
+    counts.className = "cost-tokens";
+    for (const [label, value] of [["Input tokens", costs.total_input_tokens], ["Output tokens", costs.total_output_tokens]]) {
+      const count = node("div");
+      count.append(node("small", label));
+      count.append(node("span", tokens(value)));
+      counts.append(count);
     }
+    container.append(counts);
+    const audit = node("details");
+    audit.className = "cost-audit";
+    audit.append(node("summary", "Cost details"));
+    audit.append(node("p", `Known subtotal: ${usd(costs.known_cost_usd)}. This excludes unavailable costs.`));
+    if (report.pipeline_runs.length > 1) audit.append(node("p", `Current attempt: ${usd(report.current_run.total_cost_usd)}; known subtotal ${usd(report.current_run.known_cost_usd)}.`));
+    container.append(audit);
   }
 
   function renderTrace(report) {
+    const focused = document.activeElement?.id;
     const container = document.getElementById("trace-cards");
+    const expanded = new Set();
+    report.trace.forEach((step, index) => {
+      if (document.getElementById(`trace-${step.id ?? index}`)?.open) expanded.add(step.id ?? index);
+    });
     container.replaceChildren();
-    for (const step of report.trace) {
-      const details = step.details_json;
-      const roles = { draft: "Briefing writer", evaluation: "Independent reviewer" };
+    setText("trace-count", `${report.trace.length} steps`);
+    for (const [index, step] of report.trace.entries()) {
+      const details = step.details_json ?? {};
+      const roles = { launch_limits: "Launch limits", classification: "Classification", injection: "Hidden instructions", missing_details: "Missing details", panic: "Tone check", draft: "Briefing writer", evaluation: "Independent reviewer", pipeline: "Pipeline" };
       const name = roles[step.step_name] ?? step.step_name.replaceAll("_", " ");
-      const element = card(`${name}${details.round_number ? ` — round ${details.round_number}` : ""}: ${step.status}`);
-      element.append(node("p", `Started: ${utcTime(step.started_at)}. Completed: ${utcTime(step.completed_at)}.`));
-      element.append(node("p", `Latency: ${step.latency_ms === null ? "Unavailable" : step.latency_ms + " ms"}.`));
-      element.append(node("p", `Input tokens: ${step.input_tokens ?? "Unavailable"}; output tokens: ${step.output_tokens ?? "Unavailable"}; cost: ${usd(step.cost_usd)}.`));
-      element.append(node("p", `Model: ${details.model ?? "No model response"}${details.provider ? ` (${details.provider})` : ""}.`));
-      const inspection = node("details");
-      inspection.append(node("summary", "Execution details"));
+      const card = node("article");
+      card.className = "trace-card";
+      const disclosure = node("details");
+      disclosure.id = `trace-${step.id ?? index}`;
+      disclosure.open = expanded.has(step.id ?? index);
+      const summary = node("summary");
+      summary.id = `trace-summary-${step.id ?? index}`;
+      summary.className = "trace-line";
+      const title = node("span");
+      title.className = "trace-step";
+      title.append(node("strong", `${name}${details.round_number ? ` · round ${details.round_number}` : ""}`));
+      const state = node("span", { completed: "Done", processing: "Running", failed: "Failed", interrupted: "Interrupted" }[step.status] ?? step.status);
+      state.className = `status-badge ${["failed", "interrupted"].includes(step.status) ? "danger" : ""}`;
+      title.append(state);
+      summary.append(title);
+      for (const [value, label, shortLabel] of [[duration(step.latency_ms), "Duration", "Duration"], [`${tokens(step.input_tokens)} / ${tokens(step.output_tokens)}`, "Input / output tokens; — means unreported", "Tokens · in / out"], [step.cost_usd == null ? "—" : usd(step.cost_usd).replace(" USD", ""), "Cost in USD; — means unavailable", "Cost · USD"]]) {
+        const metric = node("span");
+        metric.className = "trace-metric";
+        metric.title = label;
+        metric.setAttribute("aria-label", `${label}: ${value}`);
+        const caption = node("small", shortLabel);
+        caption.className = "metric-label";
+        metric.append(caption);
+        metric.append(node("span", value));
+        summary.append(metric);
+      }
+      disclosure.append(summary);
+      const inspection = node("div");
+      inspection.className = "trace-extra";
+      inspection.append(node("p", `Started ${utcTime(step.started_at)} · Finished ${utcTime(step.completed_at)}`));
+      inspection.append(node("p", details.model ? `Model: ${details.model}${details.provider ? ` · ${details.provider}` : ""}` : "No model call recorded."));
       inspection.append(node("pre", JSON.stringify(details, null, 2)));
-      element.append(inspection);
-      container.append(element);
+      disclosure.append(inspection);
+      card.append(disclosure);
+      container.append(card);
     }
+    if (focused?.startsWith("trace-summary-")) document.getElementById(focused)?.focus();
   }
 
   async function loadDetail(generation) {
@@ -217,10 +305,11 @@
     let message = reason;
     if (posting) message = "Saving human approval…";
     else if (!detailFresh && selectedReport) message = "Refresh this report before approval.";
-    else if (!reason && principal?.role !== "flight_director") message = "Sign in under Approval access to approve this briefing.";
-    else if (!reason && !acknowledged) message = "Explicitly acknowledge every flagged check and its listed findings.";
-    else if (!reason) message = `Ready to approve this briefing. The launch verdict will remain ${selectedReport.verdict === "go" ? "GO" : "NO-GO"}.`;
+    else if (!reason && principal?.role !== "flight_director") message = "Sign in as Flight Director to approve.";
+    else if (!reason && !acknowledged) message = "Review and acknowledge the flagged checks.";
+    else if (!reason) message = "Ready for your approval.";
     setText("approval-status", message);
+    document.getElementById("approval-panel").hidden = selectedReport?.status !== "pending_review" && !principal && !authBusy;
     document.getElementById("approval-form").hidden = selectedReport?.status !== "pending_review";
     document.getElementById("director-access").hidden = selectedReport?.status !== "pending_review" && !principal && !authBusy;
     document.getElementById("director-token").disabled = posting || authBusy;

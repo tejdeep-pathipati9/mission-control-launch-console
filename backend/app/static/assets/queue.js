@@ -2,7 +2,7 @@
 
 (() => {
   const { requestJson, setText, validId } = window.MissionControl;
-  const { utcTime, usd } = window.MissionReportView;
+  const { utcTime, usd, toneForStatus } = window.MissionReportView;
   const pageSize = 25;
   const statusLabels = { processing: "Processing", pending_review: "Pending review", approved: "Approved", failed: "Failed" };
   let offset = 0;
@@ -37,13 +37,19 @@
       link.className = "report-id";
       idCell.append(link);
       row.append(idCell);
-      row.append(node("td", report.station));
+      const station = node("td");
+      station.append(node("span", report.station));
+      station.append(node("small", report.engineer_name));
+      row.append(station);
       const status = node("td");
       const badge = node("span", statusLabels[report.status] ?? report.status);
-      badge.className = "status-badge";
+      badge.className = `status-badge ${toneForStatus(report.status)}`;
       status.append(badge);
       row.append(status);
-      const verdict = node("td", report.verdict === "go" ? "GO" : "NO-GO");
+      const verdict = node("td");
+      const decision = node("span", report.verdict === "go" ? "GO" : "NO-GO");
+      decision.className = `status-badge ${report.verdict === "no_go" ? "danger" : ""}`;
+      verdict.append(decision);
       verdict.className = "verdict-cell";
       row.append(verdict);
       const deadline = node("td");
@@ -52,20 +58,25 @@
       const date = report.brief_by_at && new Date(report.brief_by_at);
       if (date && !Number.isNaN(date.getTime())) {
         deadline.append(node("span", date.toLocaleDateString("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" })));
-        deadline.append(node("small", date.toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" }) + " UTC"));
+        deadline.append(node("small", date.toLocaleTimeString("en-GB", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" })));
       } else deadline.textContent = report.status === "processing" ? "Pending" : "Unavailable";
       row.append(deadline);
-      row.append(node("td", String(report.flags?.length ?? 0)));
+      const flags = node("td");
+      const flagCount = report.flags?.length ?? 0;
+      const flag = node("span", flagCount ? String(flagCount) : "—");
+      if (flagCount) flag.className = "status-badge warning";
+      flags.append(flag);
+      row.append(flags);
       const costs = report.costs;
       const cost = node("td");
       cost.className = "cost-cell";
+      cost.title = costs?.cost_complete ? "Complete recorded cost" : "Usage or pricing is incomplete";
       if (costs?.cost_complete) cost.append(node("span", usd(costs.total_cost_usd).replace(" USD", "")));
       else if (costs?.known_cost_usd != null && Number(costs.known_cost_usd) > 0) {
         cost.append(node("span", usd(costs.known_cost_usd).replace(" USD", "")));
         cost.append(node("small", "Partial cost"));
       } else {
         cost.append(node("span", report.status === "processing" ? "Pending" : "Unavailable"));
-        cost.append(node("small", "Usage or pricing incomplete"));
       }
       row.append(cost);
       body.append(row);
