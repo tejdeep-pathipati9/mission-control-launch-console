@@ -156,6 +156,24 @@ expanded findings were also verified. No JavaScript errors
 were observed. Browser tooling was temporary and adds no application dependencies or build step.
 These checks used synthetic models and isolated databases, not live Foundry calls.
 
+**Live Foundry verification (November 18, 2026):** Two fresh reports used real
+`claude-opus-5` calls on the confirmed Global Standard deployment. Both had three clear checks,
+a short model draft, and a passing independent review on round 1. The browser displayed the exact
+model summary under **Flight Director briefing**, rather than the application-generated overview.
+Each report has seven trace cards, with reported tokens and six calculated model-call costs.
+
+| Local report | Verdict before / after approval | Model summary | Input / output tokens | Calculated cost |
+| --- | --- | --- | --- | --- |
+| [#9](http://localhost:8000/reports/9) | GO / GO | 39 words | 7,128 / 528 | $0.048840 USD |
+| [#10](http://localhost:8000/reports/10) | NO-GO / NO-GO | 41 words | 7,242 / 505 | $0.048835 USD |
+
+At the user's explicit request, authenticated browser actions approved both saved versions as
+`demo-flight-director`; the model pipeline itself left them pending. The audit records, verdicts,
+findings, briefing versions, and costs were checked afterward. The eight historical reports remained
+unchanged. These are local database records, not seeded assignment data. A random approval credential
+was supplied only to the running container and browser session; no credential was committed.
+Costs use reported usage and published list rates, not an Azure invoice or negotiated discount.
+
 Final test output:
 
 ```text
@@ -250,6 +268,15 @@ also require the corresponding `FOUNDRY_CACHE_WRITE_5M_USD_PER_MILLION` or
 `FOUNDRY_CACHE_WRITE_1H_USD_PER_MILLION` rate and a reported TTL breakdown. No write rate is
 needed when the provider reports zero writes. Direct Anthropic prices are not assumed for Foundry;
 missing prices keep dollar totals unavailable. Rates may be zero but must be finite and nonnegative.
+The template supplies the verified Claude Opus 5 **Global Standard** list rates: $5 input,
+$0.50 cached input, $25 output, $6.25 five-minute cache writes, and $10 one-hour cache writes
+per million tokens. [Foundry pricing](https://platform.claude.com/docs/en/about-claude/pricing#claude-in-microsoft-foundry-pricing)
+and the [November 9 rate card, page 15](https://assets.claude.com/a04aca860a54b7323e33f449706e9b43680e1346.pdf#page=15)
+were checked November 18, 2026. US Data Zone Standard applies a 1.1x multiplier; replace these
+values for another model, deployment type, or negotiated pricing. The local verification also
+stores these non-secret prices in an ignored `compose.override.yaml`, automatically loaded by
+the normal startup command. Keep credentials out of that file and Git. Historical reports are
+never repriced when configuration changes.
 Direct Anthropic access remains optional with `MODEL_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`.
 Custom direct Anthropic prices use the matching `ANTHROPIC_*_USD_PER_MILLION` variables,
 including optional `ANTHROPIC_CACHE_WRITE_5M_USD_PER_MILLION` and

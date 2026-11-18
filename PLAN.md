@@ -388,4 +388,13 @@ mission-control/
 - [x] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
 - [x] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
 
-**Next step:** Review the completed `feature/final-verification` branch for merge.
+**Final live verification (November 18, 2026):** Confirmed the deployment uses Claude Opus 5
+Global Standard list prices and configured all input/output/cache rates. Fresh reports #9 and #10
+produced 39- and 41-word model summaries, each independently reviewed on round 1. Authenticated
+browser approvals were explicitly requested by the user; GO and NO-GO verdicts stayed unchanged.
+Calculated totals were $0.048840 and $0.048835 USD. All eight historical reports were preserved.
+The documented Docker command passed 436 Python tests; 58 frontend checks, lint, formatting,
+and the 11 credential-guard checks also passed. Detailed evidence is in the README.
+
+**Delivery:** Feature implementation and final verification are complete. Submit the final branch
+through a pull request into `main`, preserving the focused commits and verification evidence.
