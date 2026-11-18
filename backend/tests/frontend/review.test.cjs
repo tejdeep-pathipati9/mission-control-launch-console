@@ -60,16 +60,48 @@ test("briefing uses its exact draft summary while the full saved version remains
   assert.match(ui.el("trace-cards").textContent, /1,890 \/ 550/);
 });
 
-test("a verbose legacy briefing is a labelled excerpt with all original text retained", async () => {
+test("a verbose legacy briefing gets a labelled overview with all original text retained", async () => {
   const data = ready();
   data.latest_briefing.content = "Observation ".repeat(120) + "Retain the complete original.";
   const ui = harness([reply(data)], "/reports/7");
   await flush();
   assert.equal(ui.el("briefing-excerpt").hidden, false);
-  assert.equal(ui.el("briefing-content").textContent.split(/\s+/).length, 50);
+  assert.match(ui.el("briefing-content").textContent, /^Readings breach launch limits \(NO-GO\)/);
+  assert.equal(ui.el("briefing-heading").textContent, "Report overview");
+  assert.match(ui.el("briefing-excerpt").textContent, /From saved readings and checks/);
   assert.equal(ui.el("briefing-full-content").textContent, data.latest_briefing.content);
   assert.equal(ui.el("verdict").textContent, "NO-GO");
   assert.match(ui.el("verdict").className, /danger/);
+});
+
+for (const verdict of ["go", "no_go"]) {
+  test(`the missing-context overview uses the saved ${verdict} verdict rather than the old prose`, async () => {
+    const data = ready({ verdict });
+    data.checks[0].outcome = "clear";
+    data.checks[0].details_json.findings = [];
+    data.checks[1].outcome = "flagged";
+    data.checks[1].details_json.findings = ["Observation time and equipment are missing."];
+    data.latest_briefing.content = "Weather subsystem report. The canonical verdict is GO. The free-text note field is unintelligible.";
+    const original = data.latest_briefing.content;
+    const ui = harness([reply(data)], "/reports/7");
+    await flush();
+    const expected = verdict === "go" ? "Readings meet launch limits (GO)." : "Readings breach launch limits (NO-GO).";
+    assert.equal(ui.el("briefing-content").textContent, `${expected} Missing details remain flagged for review. Ask the reporting engineer to fill the gaps listed in the checks.`);
+    assert.equal(ui.el("briefing-full-content").textContent, original);
+    assert.equal(ui.el("approve-briefing").disabled, true);
+    assert.equal(ui.requests.filter(request => request.options.method === "POST").length, 0);
+  });
+}
+
+test("the overview cannot describe incomplete checks as clear", async () => {
+  const data = ready({ status: "failed" });
+  data.checks[0].outcome = "error";
+  data.latest_briefing.content = "Observation ".repeat(100);
+  const ui = harness([reply(data)], "/reports/7");
+  await flush();
+  assert.match(ui.el("briefing-content").textContent, /Required checks are incomplete/);
+  assert.equal(ui.el("approval-form").hidden, true);
+  assert.doesNotMatch(ui.el("briefing-content").textContent, /No checks are flagged/);
 });
 
 test("another attempt or round cannot replace the current briefing summary", async () => {

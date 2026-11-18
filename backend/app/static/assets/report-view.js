@@ -21,6 +21,27 @@
     return { text: words.slice(0, limit).join(" ") + (words.length > limit ? "…" : ""), shortened: words.length > limit };
   }
 
+  function reportOverview(report) {
+    const verdict = report.verdict === "go" ? "Readings meet launch limits (GO)."
+      : report.verdict === "no_go" ? "Readings breach launch limits (NO-GO)." : "Launch verdict is unavailable.";
+    const checks = report.checks ?? [];
+    if (report.status === "processing") return `${verdict} Processing is still running. Wait for the reviewed briefing.`;
+    if (checks.length !== 3 || checks.some((check) => !["clear", "flagged"].includes(check.outcome) || check.details_json?.error_reason != null)) {
+      return `${verdict} Required checks are incomplete. Resolve them before briefing approval.`;
+    }
+    const flagged = checks.filter((check) => check.outcome === "flagged");
+    if (flagged.length === 1 && flagged[0].check_type === "missing_details") {
+      return `${verdict} Missing details remain flagged for review. Ask the reporting engineer to fill the gaps listed in the checks.`;
+    }
+    if (flagged.length) {
+      const names = { injection: "hidden instructions", missing_details: "missing details", panic: "tone concerns" };
+      const labels = flagged.map((check) => names[check.check_type] ?? "a concern");
+      const concerns = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+      return `${verdict} Checks flagged ${concerns}. Review those findings and follow up with the reporting engineer.`;
+    }
+    return `${verdict} No checks are flagged. Review the saved briefing before approval.`;
+  }
+
   function briefingText(report, version) {
     // Draft traces already retain validated structured output. Use only the exact version's
     // successful draft; never mix attempts or parse model-authored headings as boundaries.
@@ -32,8 +53,12 @@
     });
     const summary = draft?.details_json.validated_output.summary;
     const text = summary ?? version.content;
-    // Old long summaries are labelled excerpts; their exact saved text stays available.
-    return excerpt(text, String(text).trim().split(/\s+/).length > 80 ? 50 : 80);
+    const padded = String(text).trim().split(/\s+/).length > 80
+      || /\b(canonical (verdict|facts|values)|free[- ]text note field|automated screening returned)\b/i.test(text);
+    // This overview is explicitly labelled as application-derived, never a rewritten model draft.
+    // The complete saved briefing and the exact version approved remain unchanged.
+    return padded ? { text: reportOverview(report), overview: true, shortened: false }
+      : { ...excerpt(text), overview: false };
   }
 
   function renderReport(report, expectedId) {
@@ -78,11 +103,13 @@
     document.getElementById("briefing-pending").hidden = Boolean(version);
     setText("briefing-pending-message", report.status === "processing" ? "The pipeline is preparing this briefing." : "No reviewed briefing is available for this report.");
     if (version) {
-      setText("briefing-quality", version.quality_passed ? "Quality passed" : "Draft · not passed");
-      document.getElementById("briefing-quality").className = `status-badge ${version.quality_passed ? "" : "warning"}`;
       const summary = briefingText(report, version);
+      setText("briefing-heading", summary.overview ? "Report overview" : "Flight Director briefing");
+      setText("briefing-quality", version.quality_passed ? (summary.overview ? "Saved review passed" : "Quality passed") : "Draft · not passed");
+      document.getElementById("briefing-quality").className = `status-badge ${version.quality_passed ? "" : "warning"}`;
       setText("briefing-content", summary.text);
-      document.getElementById("briefing-excerpt").hidden = !summary.shortened;
+      setText("briefing-excerpt", summary.overview ? "From saved readings and checks · full original briefing below." : "Excerpt · full saved briefing below.");
+      document.getElementById("briefing-excerpt").hidden = !summary.overview && !summary.shortened;
       setText("briefing-full-content", version.content);
     }
     document.getElementById("report-result").hidden = false;
