@@ -29,8 +29,9 @@
     const failure = report.status === "failed" ? report.current_run?.failure_message : null;
     setText("status-message", `${statuses[report.status]}${failure ? ` ${failure}` : ""}`);
     setText("verdict", { go: "GO", no_go: "NO-GO" }[report.verdict] ?? "Unavailable");
-    setText("severity", report.severity ? report.severity.toUpperCase() : "Awaiting classification");
-    setText("subsystem", report.subsystem ? report.subsystem.replaceAll("_", " ") : "Awaiting classification");
+    const unknown = report.status === "processing" ? "Awaiting classification" : "Unavailable";
+    setText("severity", report.severity ? report.severity.toUpperCase() : unknown);
+    setText("subsystem", report.subsystem ? report.subsystem.replaceAll("_", " ") : unknown);
     const time = document.querySelector("#brief-by");
     if (report.brief_by_at) {
       time.dateTime = report.brief_by_at;
@@ -39,7 +40,7 @@
       }) + " UTC";
     } else {
       time.removeAttribute("datetime");
-      time.textContent = "Awaiting classification";
+      time.textContent = unknown;
     }
     renderList("violations", report.violations_json, "None. All readings are within launch limits.");
     const checks = report.checks ?? [];

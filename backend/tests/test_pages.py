@@ -45,6 +45,9 @@ def test_submission_and_report_are_separate_pages_and_old_links_redirect(client)
     assert 'id="report-status"' not in form.text
     assert 'id="report-status"' in report.text
     assert 'id="report-form"' not in report.text
+    assert 'id="queue-body"' not in report.text
+    for control in ("approval-form", "check-cards", "trace-cards", "cost-summary"):
+        assert f'id="{control}"' in report.text
     redirect = client.get("/?report=7", follow_redirects=False)
     assert redirect.status_code == 307
     assert redirect.headers["location"] == "/reports/7"
@@ -55,10 +58,15 @@ def test_reports_list_is_a_real_page_and_director_bookmarks_preserve_selection(c
     response = client.get("/reports", follow_redirects=False)
     assert response.status_code == 200
     assert 'id="queue-body"' in response.text
+    assert 'id="report-status"' not in response.text
+    assert 'id="approval-form"' not in response.text
     assert client.get("/reports").url.path == "/reports"
     redirect = client.get("/director?report=7", follow_redirects=False)
     assert redirect.status_code == 307
-    assert redirect.headers["location"] == "/reports?report=7"
+    assert redirect.headers["location"] == "/reports/7"
+    old_selection = client.get("/reports?report=7", follow_redirects=False)
+    assert old_selection.status_code == 307
+    assert old_selection.headers["location"] == "/reports/7"
     assert (
         client.get("/director?report=invalid", follow_redirects=False).headers["location"]
         == "/reports"
@@ -144,7 +152,7 @@ def test_http_director_review_approval_and_restart_preserve_decision(
         assert api.get("/reports").status_code == 200
         alias = api.get("/director")
         assert alias.status_code == 307 and alias.headers["location"] == "/reports"
-        for asset in ("common.js", "report-view.js", "director.js", "styles.css"):
+        for asset in ("common.js", "report-view.js", "queue.js", "report.js", "styles.css"):
             assert api.get(f"/assets/{asset}").status_code == 200
         submitted = api.post(
             "/api/reports",
@@ -200,4 +208,6 @@ def test_http_director_review_approval_and_restart_preserve_decision(
     with serve("tests.ui_app:director_app", database, tmp_path / "restarted.log") as api:
         assert api.get(status_url).json() == approved
         assert api.get(f"/reports/{approved['id']}").status_code == 200
-        assert api.get(f"/reports?report={approved['id']}").status_code == 200
+        old = api.get(f"/reports?report={approved['id']}")
+        assert old.status_code == 307
+        assert old.headers["location"] == f"/reports/{approved['id']}"

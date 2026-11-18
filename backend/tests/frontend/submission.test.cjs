@@ -7,7 +7,9 @@ function detail(status = "processing", extra = {}) {
   return {
     ...sample, id: 7, status, verdict: "no_go", violations_json: ["Wind exceeds 25 knots."],
     subsystem: null, severity: "high", brief_by_at: "2026-11-17T20:05:00Z",
-    checks: [], latest_briefing: null, current_run: {}, ...extra,
+    checks: [], latest_briefing: null, current_run: {},
+    trace: [], briefing_versions: [], approvals: [], pipeline_runs: [],
+    costs: { cost_complete: false, known_cost_usd: "0", total_cost_usd: null }, ...extra,
   };
 }
 const accepted = () => ({ status: 202, data: { report_id: 7, status: "processing" } });
@@ -212,7 +214,7 @@ for (const status of ["pending_review", "approved", "failed"]) {
     }))], "/reports/7");
     await flush();
     assert.equal(ui.el("briefing-content").textContent, untrusted);
-    assert.match(ui.el("findings").textContent, /<script>/);
+    assert.match(ui.el("check-cards").textContent, /<script>/);
     assert.equal(ui.el("briefing-content").children.length, 0);
     assert.equal(ui.el("verdict").textContent, "NO-GO");
     assert.equal(ui.timers.size, 0);
@@ -227,7 +229,7 @@ test("an unresolved fail-safe injection flag is visible on a failed report", asy
                details_json: { error_reason: "invalid_output", review_required: true } }],
   }))], "/reports/7");
   await flush();
-  assert.match(ui.el("findings").textContent, /flagged.*human review/);
+  assert.match(ui.el("check-cards").textContent, /flagged.*human review/);
   assert.match(ui.el("checks-summary").textContent, /0 of 3 checks completed; 1 could not complete/);
   assert.match(ui.el("status-message").textContent, /Processing failed/);
 });
