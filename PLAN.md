@@ -4,7 +4,7 @@
 
 **Goal:** Engineers submit anomaly reports; a backend pipeline validates readings, classifies and checks the note, produces a reviewed briefing, and leaves the final briefing approval to the Flight Director.
 
-**Scope right now:** Browser workflow implemented; final usability, demo, and grading verification remain. **Frontend: plain HTML, CSS, and small vanilla JavaScript files.** Delivery is a containerized full-stack application.
+**Scope right now:** Implementation and final delivery verification complete, including the browser workflow and responsive UI cleanup. **Frontend: plain HTML, CSS, and small vanilla JavaScript files.** Delivery is a containerized full-stack application.
 
 > This is an assignment/demo system, **not software certified for actual launch decisions**. A model's output must never override deterministic launch rules or approve a briefing.
 
@@ -44,7 +44,7 @@ docker compose up --build
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The first command serves the API, engineer form, saved-report page, and Flight Director console. Interactive browser/layout QA remains pending.
+The first command serves the API, engineer form, saved-report page, and Flight Director console. Headless Chromium workflow and responsive layout checks are verified; screenshots were inspected.
 
 ## 2. Non-negotiable behavior
 
@@ -89,7 +89,7 @@ Engineer submits report
 ### 3.1 Request lifecycle (DECIDED: asynchronous response + polling)
 
 1. `POST /api/reports` validates input and computes the deterministic launch verdict. Commit the original report, verdict, violations, new `pipeline_run`, and deterministic rule trace in **one transaction**, before any external calls. Only after that commit, schedule the model pipeline and **return `202 Accepted`** with `{"report_id": ..., "status": "processing", "status_url": "/api/reports/{id}"}`. This response does not wait for model processing.
-2. The backend processes the run after the response. The future frontend polls `GET /api/reports/{id}` (initially every two seconds) while status is `processing`, stopping at `pending_review`, `failed`, or `approved`. That endpoint returns the verdict immediately, plus completed steps/checks/drafts as available. Before classification finishes, severity/deadline may be null unless a launch-limit breach already establishes `high` and `created_at + 5 minutes`; never present unknown classification as low severity. Calculate all final deadlines from the original report creation time.
+2. The backend processes the run after the response. The frontend polls `GET /api/reports/{id}` (initially every two seconds) while status is `processing`, stopping at `pending_review`, `failed`, or `approved`. That endpoint returns the verdict immediately, plus completed steps/checks/drafts as available. Before classification finishes, severity/deadline may be null unless a launch-limit breach already establishes `high` and `created_at + 5 minutes`; never present unknown classification as low severity. Calculate all final deadlines from the original report creation time.
 3. For the local MVP, use FastAPI [`BackgroundTasks`](https://fastapi.tiangolo.com/tutorial/background-tasks/); **this design does not provide a durable queue**. On startup, before accepting requests, mark any persisted run left `processing` as `failed` with reason `interrupted`, update its report, and close unfinished trace steps as interrupted. Preserve completed results and recorded usage. This recovery assumes the single worker/container defined in Section 1.1. Do not automatically rerun interrupted work. An explicit retry/reprocess endpoint may be added later; a real deployment would use a durable worker queue.
 4. Invalid form data returns `422` and saves nothing; persistence errors return `5xx` without scheduling work. Once a report is committed, scheduling/processing errors must record a failed state where storage is available; a process crash is recovered on startup. `GET` exposes the machine-readable reason and a human-readable explanation.
 5. Pass only persisted report/run identifiers into background tasks and open a fresh database session there. Do not reuse the request session or share one SQLAlchemy session among concurrent checks. Run the three model calls concurrently, capture each result/error independently, and persist results in short transactions without holding database locks during network calls. Put finite configurable timeouts on every model call so polling cannot remain `processing` indefinitely; one check failure must not discard the other checks' findings.
@@ -167,7 +167,7 @@ Each branch delivers one focused change with its related tests and documentation
 | 6 | `feature/director-approval` | Two focused commits: local demo bearer guard/configuration, then transactional approval/API tests. Current-version approval, flag acknowledgements, atomic audit, and duplicate/stale protection. | 6 — approval |
 | 7 | `feature/report-submission-ui` | Two focused commits: plain-HTML engineer page/static serving, then offline workflow tests and Docker verification. Validation, confirmation, saved links, polling/retry, and shared minimal styling. | 7 — engineer workflow |
 | 8 | `feature/director-console` | Three focused commits: queue and inspectable details; authenticated approval and acknowledgements; HTTP/restart tests and delivery evidence. Includes verdicts/deadlines, findings, briefing history, and trace cards/costs. | 7 — director workflow |
-| 9 | `feature/final-verification` | Full-workflow integration fixes, complete-app Docker/offline-test verification, final README evidence, completed tool choices, and grading/demo checks. | 8 |
+| 9 | `feature/final-verification` | Final delivery checks, dedicated report review pages, clean responsive UI/navigation, rubric coverage, and README evidence. | 8 |
 
 **Branch workflow:**
 
@@ -229,11 +229,13 @@ Each branch delivers one focused change with its related tests and documentation
 
 ### Milestone 5 — Briefing generation and quality review
 
-- [x] Draft a concise briefing with anomaly summary, subsystem, severity, verdict, violations, and deadline.
+- [x] Draft a 20–45 word narrative without a minimum length with canonical facts supplied separately. Enforce an 80-word maximum in code; reject internal jargon, repeated sentences, and three-reading recitals. Feed readability rejections into the same three-round revision loop, even if the model reviewer passes the draft.
 - [x] Validate that generated text cannot replace the canonical verdict/violations stored by Python.
 - [x] Evaluate each draft using a separate model call with structured feedback.
 - [x] Feed evaluator comments to the next drafting round, stopping on pass or after three rounds.
 - [x] Persist each version, feedback, and whether the latest draft passed quality review. If all three fail, set status `failed` and block approval.
+
+**Model roles:** A writer and reviewer make separate calls through the shared `ModelClient`, with distinct prompts/schemas and no shared conversation. Both currently use the configured Foundry model; different models or autonomous agents are not rubric requirements. Only the human approval endpoint can approve.
 
 **Implementation:** Strict structured drafts carry a summary and copies of canonical facts. Python renders the saved facts and all flagged findings into each briefing; any differing model fact forces rejection even when the evaluator reports a pass. The independent evaluator checks narrative accuracy and quality; this does not guarantee perfect model judgment. Each draft response and version, and each evaluation response and feedback, commit together. Invalid/refused/incomplete responses and timeouts fail explicitly, retaining available usage and prior versions. Interrupted evaluations preserve an unapproved draft; late responses cannot promote stale or terminated runs. Feature 5 adds accounting; Feature 6 now supplies explicit human approval.
 
@@ -260,39 +262,41 @@ Each branch delivers one focused change with its related tests and documentation
 
 - [x] Select plain HTML/CSS with minimal vanilla JavaScript for the small static-page UI.
 
-**UI decision:** Plain white background, black system-font text, simple borders, readable spacing, and native form/button controls. Keep the interface responsive and keyboard accessible. Use labels and text for status rather than relying on color. No component library, dashboard theme, charts, or decorative effects.
+**UI decision:** Use the apple-design skill’s hierarchy, system typography, restraint, immediate feedback, and accessibility principles. Full-width report review uses a main column and sidebar, a single checks table, and compact trace cards with expandable audit details. Keep neutral surfaces; reserve red for failures/NO-GO and amber for review warnings, always paired with labels. Summaries lead, detailed findings and raw metadata expand on demand. Honor larger text and reduced motion. No component library, frontend build system, charts, or decorative animation.
 
 1. **Engineer page (`/`):** Show the input form and validation errors. A successful submission navigates to its separate report page.
-2. **Report page (`/reports/{id}`):** Display the original submission, processing/result status, readings/verdict, violations, deadline, findings, and latest briefing. Keep polling and GET-only retry here. A New report link returns to the form. Existing `/?report={id}` links redirect here; refresh does not resubmit.
-3. **Flight Director page (`/director`):** Keep the report queue and selected-report detail on the same page. Display readings/verdict, violations, deadline, checks/flags, briefing versions, one trace card per step with tokens/cost, and explicit approval with flag acknowledgements. Put demo director access inline; no separate login page. Keep its entered token in memory and send it only on authenticated API requests.
+2. **Report review page (`/reports/{id}`):** Use the full viewport width with the briefing, a single checks table, and compact trace cards in the main column; readings, deadline, approval, and costs occupy a sidebar. Keep complete findings, timestamps, raw execution data, original input, and saved versions accessible through disclosures. New summaries are limited to 80 words; long or jargon-heavy historical versions show a clearly labelled overview from the saved verdict/checks; their original model briefing and approval version remain unchanged. Keep polling and GET-only retry here. All reports returns to the queue; New report returns to the form. Put approval access in a collapsed panel for pending briefings and keep its token in page memory. Failed reports show unavailable stages and no approval form.
+3. **Report queue (`/reports`):** Show the paginated list only. Use normal links to open `/reports/{id}` as a new document, with working browser Back/Forward. Old `/?report={id}`, `/director?report={id}`, and `/reports?report={id}` bookmarks redirect to the dedicated report page. Old `/director` without an ID redirects to the queue.
 
 Use small local JavaScript files for `fetch`, form submission, selection, and two-second polling while processing. Render untrusted report/model text as text, not executable HTML. The pages and assets ship with the Python app; no frontend compilation or external asset downloads are required.
 
 - [x] Build the engineer form with field errors and redirect successful submissions to a separate saved-report page.
-- [x] Build the Flight Director report queue and selected-report detail together at `/director`; `/reports` redirects to the queue.
+- [x] Build the report queue at `/reports` with normal links to dedicated review pages at `/reports/{id}`; preserve legacy links with redirects.
 - [x] Display verdict, violations, severity, deadline, check flags, briefing versions, trace cards, token counts, and costs.
 - [x] Add explicit human approval interaction through the protected API, keeping demo credentials only in memory.
 - [x] The report page polls while processing, stops at terminal states, shows failures/unavailable classification, and offers GET-only status retries. Duplicate submits and stale responses are guarded.
 - [x] Director page displays provisional costs and requires explicit flag acknowledgement before approval. Conflicts refresh the report and reset acknowledgements; interrupted POSTs are never retried automatically.
 - [x] Package the engineer HTML/CSS/JS in the existing runtime image; verify UI/assets, report-link reload, `/api`, and `/docs` coexist. The isolated production-image smoke test reached healthy status.
 - [x] Complete the director page so the root Compose command exposes the entire browser workflow.
-- [ ] Verify the full workflow, restart persistence, and usability.
+- [x] Verify the full workflow, restart persistence, and responsive layout in headless Chromium; inspect desktop/mobile screenshots.
 
-**Feature 7 evidence:** 423 Python tests plus 26 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; interactive browser/layout QA is still pending because browser access was unavailable.
+**Feature 7 evidence:** 423 Python tests plus 26 JavaScript workflow checks pass locally and through the offline Docker test command. The JavaScript harness uses an in-memory DOM; feature 9 adds separate real-browser verification.
 
-**Feature 8 evidence:** 427 Python tests and 52 JavaScript checks pass locally and through the offline Docker test command. Real HTTP tests cover flagged GO/NO-GO briefing approval, permission and acknowledgement rejection, unchanged verdict/history/costs, and approval persistence after restart. The isolated production image serves all pages and assets. Full usability and manual demo verification remain for feature 9; the in-memory DOM tests do not establish visual correctness.
+**Feature 8 evidence:** 427 Python tests and 52 JavaScript checks pass locally and through the offline Docker test command. Real HTTP tests cover flagged GO/NO-GO briefing approval, permission and acknowledgement rejection, unchanged verdict/history/costs, and approval persistence after restart. The isolated production image serves all pages and assets. Feature 9 adds real-browser workflow/layout verification; the in-memory DOM tests alone do not establish visual correctness.
 
 **Done when:** All information required by the rubric can be viewed and the approval performed from the browser.
 
 ### Milestone 8 — Documentation and grading verification
 
-- [ ] Write `README.md` with the root-level Docker Compose **one command to start the complete app** and **one command to run all tests**. Document Docker/Compose prerequisites, live-model credential setup, browser URL, and the difference between image-build network access and offline test execution.
-- [ ] Write `TOOL_CHOICES.md`: backend, frontend, database, and model—each with a specific reason, a rejected alternative, and a customer concern.
-- [ ] Verify all tests work with `OPENAI_API_KEY` unset and network disabled.
-- [ ] Verify Compose configuration, clean image builds, app health, UI availability, and database persistence after container recreation. Separately interrupt an in-flight run, restart, and verify `failed`/`interrupted` with original verdict and completed history preserved. Record startup and test output as evidence; do not present target commands as verified until these checks pass.
-- [ ] Verify the real HTTP `202` response is delivered while a coordinated fake model remains blocked, then release the model and poll to completion. An in-process test client alone may wait for background tasks and is insufficient evidence of response timing.
-- [ ] Capture a restart test, model-fallback test, concurrent-check test, injection test, three-round cap test, and trace/cost tests.
-- [ ] Record a manual demo showing a `go` boundary and a `no_go` just past the limit, without changing the verdict on human briefing approval.
+- [x] Document one root-level Docker Compose command to start the complete app and one to run all tests, with prerequisites, runtime configuration, browser URL, and offline-test details in `README.md`.
+- [x] Complete `TOOL_CHOICES.md` with backend, frontend, database, and model reasons, rejected alternatives, and customer concerns.
+- [x] Verify all tests without live credentials or internet access: 436 Python tests and 58 JavaScript checks pass locally and in network-disabled Docker stages; lint/formatting and 11 credential-hook tests pass.
+- [x] Verify Compose configuration, clean runtime/test image builds, app health, all pages/assets, and complete report persistence after container recreation. Kill a separate fake-model container during evaluation, then recover its volume using the production image; preserve original verdict, completed findings/draft/traces, and known costs as `failed` / `interrupted`.
+- [x] Hold classification on a test-owned gate, receive real HTTP `202`, inspect the processing report, release the gate, and poll the complete pipeline to `pending_review` without automatic approval.
+- [x] Verify boundary/deadline, classifier fallback, concurrent checks, injection, three-round feedback/cap, approval permissions, trace, cost, and restart coverage against `ASSIGNMENT.md`.
+- [x] Run a browser demo of wind 25 and 25.01 knots through separate report pages, native queue-to-detail navigation, Back/Forward, sign-in, explicit flag acknowledgement, and approval. GO/NO-GO remain unchanged. Inspect screenshots and check form/queue/review layouts at 320, 390, 768, 1440, and 1920 pixels; also verify 200% text and reduced motion. This is an automated Chromium walkthrough with visual inspection, not a live-model quality evaluation.
+
+**Feature 9 evidence:** See the [README verification note](README.md#test). Browser tooling and screenshots are temporary verification artifacts; application dependencies and the runtime image remain unchanged.
 
 **Optional backend-only development commands (run from the repository root):**
 
@@ -303,7 +307,7 @@ uv run --directory backend pytest -q
 
 These optional commands require host uv and are not the full-app delivery commands. The Docker commands in Section 1.1 are the primary documented start/test interface.
 
-## 7. Suggested backend layout
+## 7. Backend layout (key files)
 
 ```text
 mission-control/
@@ -319,58 +323,78 @@ mission-control/
 │   ├── uv.lock
 │   ├── app/
 │   │   ├── main.py
-│   │   ├── static/            # planned plain HTML/CSS/JS assets
+│   │   ├── static/            # plain HTML/CSS/JS pages
 │   │   │   ├── index.html
 │   │   │   ├── report.html
-│   │   │   ├── director.html   # feature 8
+│   │   │   ├── queue.html      # report list; links open dedicated review pages
 │   │   │   └── assets/
 │   │   │       ├── styles.css
 │   │   │       ├── common.js
+│   │   │       ├── report-view.js
 │   │   │       ├── report.js
 │   │   │       ├── submission.js
-│   │   │       └── director.js # feature 8
+│   │   │       └── queue.js    # queue pagination and refresh
 │   │   ├── api/
 │   │   │   ├── reports.py
-│   │   │   └── approvals.py
+│   │   │   ├── pages.py
+│   │   │   └── auth.py
 │   │   ├── db/
 │   │   │   ├── database.py
 │   │   │   └── models.py
 │   │   ├── schemas/
-│   │   │   └── reports.py
+│   │   │   ├── reports.py
+│   │   │   ├── checks.py
+│   │   │   ├── briefings.py
+│   │   │   └── approvals.py
 │   │   ├── llm/
 │   │   │   ├── client.py
+│   │   │   ├── factory.py
+│   │   │   ├── anthropic_client.py
 │   │   │   ├── openai_client.py
 │   │   │   └── fake_client.py
 │   │   └── services/
 │   │       ├── launch_rules.py
 │   │       ├── classification.py
 │   │       ├── safety_checks.py
-│   │       ├── briefing.py
-│   │       ├── cost.py
+│   │       ├── briefings.py
+│   │       ├── approvals.py
+│   │       ├── costs.py
 │   │       └── pipeline.py
 │   └── tests/
 │       ├── test_reports_api.py
 │       ├── test_launch_rules.py
 │       ├── test_classification.py
 │       ├── test_safety_checks.py
-│       ├── test_briefing_loop.py
+│       ├── test_briefings.py
 │       ├── test_approvals.py
-│       └── test_costs.py
+│       ├── test_costs.py
+│       ├── test_persistence.py
+│       ├── test_pages.py
+│       └── frontend/          # dependency-free queue/review/submission checks
 ```
 
 ## 8. Definition of done
 
-- [ ] From the repository root, one documented Docker Compose command builds/starts the complete app and one runs all tests; both have recorded evidence.
-- [ ] Container recreation/rebuild preserves SQLite data in a named volume; interrupted processing fails explicitly on startup under the single-worker constraint.
-- [ ] Report submission rejects malformed input and persists data through restart.
-- [ ] All exact launch limit boundaries and just-outside values are tested.
-- [ ] Deadline matches effective severity; any limit breach forces high.
-- [ ] Model classification has validated structured output and safe fallback.
-- [ ] All three checks execute concurrently; hidden instructions are flagged and cannot alter verdict.
-- [ ] Draft/evaluator loop has feedback, never exceeds three rounds, and blocks approval if quality never passes.
+- [x] From the repository root, one documented Docker Compose command builds/starts the complete app and one runs all tests; both have recorded evidence.
+- [x] Container recreation/rebuild preserves SQLite data in a named volume; interrupted processing fails explicitly on startup under the single-worker constraint.
+- [x] Report submission rejects malformed input and persists data through restart.
+- [x] All exact launch limit boundaries and just-outside values are tested.
+- [x] Deadline matches effective severity; any limit breach forces high.
+- [x] Model classification has validated structured output and safe fallback.
+- [x] All three checks execute concurrently; hidden instructions are flagged and cannot alter verdict.
+- [x] Draft/evaluator loop has feedback, never exceeds three rounds, and blocks approval if quality never passes.
 - [x] A human-only backend action approves a pending, quality-passed briefing after flag acknowledgements; unresolved checks block approval.
 - [x] Each step exposes tokens and calculated costs, with test coverage; authoritative per-run check results are stored separately from traces.
-- [ ] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
-- [ ] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
+- [x] Tests pass offline with fake model and no API key; POST returns `202`, and GET polling shows a terminal state.
+- [x] `TOOL_CHOICES.md` includes reasons, rejected alternatives, and customer concerns for all four layers.
 
-**Next coding task:** After `feature/report-submission-ui` is merged, start `feature/director-console` for the second HTML page, report review, trace/cost cards, and human approval controls.
+**Final live verification (November 18, 2026):** Confirmed the deployment uses Claude Opus 5
+Global Standard list prices and configured all input/output/cache rates. Fresh reports #9 and #10
+produced 39- and 41-word model summaries, each independently reviewed on round 1. Authenticated
+browser approvals were explicitly requested by the user; GO and NO-GO verdicts stayed unchanged.
+Calculated totals were $0.048840 and $0.048835 USD. All eight historical reports were preserved.
+The documented Docker command passed 436 Python tests; 58 frontend checks, lint, formatting,
+and the 11 credential-guard checks also passed. Detailed evidence is in the README.
+
+**Delivery:** Feature implementation and final verification are complete. Submit the final branch
+through a pull request into `main`, preserving the focused commits and verification evidence.

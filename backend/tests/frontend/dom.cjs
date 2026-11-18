@@ -9,7 +9,7 @@ const sample = { engineer_name: "Avery Chen", station: "Weather", wind_knots: "2
 // In-memory DOM surface for controller tests. This is not a visual browser test.
 function harness(responses = [], pathname = "/") {
   const url = new URL(pathname, "http://local.test");
-  const page = url.pathname === "/" ? "index.html" : (url.pathname === "/director" ? "director.html" : "report.html");
+  const page = url.pathname === "/" ? "index.html" : (url.pathname === "/reports" ? "queue.html" : "report.html");
   const html = fs.readFileSync(path.join(root, page), "utf8");
   const navigations = [];
   const elements = new Map();
@@ -50,7 +50,7 @@ function harness(responses = [], pathname = "/") {
   for (const match of html.matchAll(/<[a-z][a-z0-9]*\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
     elements.set(match[2], new Element(match[2], match[1]));
   }
-  const location = { pathname: url.pathname, search: url.search, assign: (url) => { navigations.push(url); location.href = url; } };
+  const location = { href: url.href, pathname: url.pathname, search: url.search, assign: (url) => { navigations.push(url); location.href = url; } };
   const context = {
     document: {
       querySelector: (selector) => {
@@ -83,7 +83,7 @@ function harness(responses = [], pathname = "/") {
   };
   vm.createContext(context);
   for (const match of html.matchAll(/<script src="\/assets\/([^"]+)" defer><\/script>/g)) {
-    vm.runInContext(fs.readFileSync(path.join(root, "assets", match[1]), "utf8"), context);
+    vm.runInContext(fs.readFileSync(path.join(root, "assets", match[1].split("?")[0]), "utf8"), context);
   }
   return {
     el: (id) => elements.get(id), requests, timers, location, windowEvents, navigations,

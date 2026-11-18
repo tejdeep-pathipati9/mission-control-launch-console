@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reports · Mission Control</title>
+  <link rel="stylesheet" href="/assets/styles.css?v=5">
+  <script src="/assets/common.js?v=5" defer></script>
+  <script src="/assets/report-view.js?v=5" defer></script>
+  <script src="/assets/queue.js?v=5" defer></script>
+</head>
+<body class="queue-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><a class="brand" href="/">Mission Control</a><nav aria-label="Main navigation"><a href="/">New report</a> <a href="/reports" aria-current="page">Reports</a></nav></header>
+  <main id="main">
+    <div class="page-heading"><div><h1>Reports</h1><p class="page-description">Anomaly reports and briefing reviews.</p></div><div class="heading-actions"><button id="refresh-queue" type="button">Refresh</button><a class="button primary" href="/">New report</a></div></div>
+    <noscript><p>JavaScript is needed to load reports.</p></noscript>
+    <section aria-labelledby="queue-heading">
+      <h2 id="queue-heading" class="visually-hidden">Report queue</h2>
+      <p id="queue-status" class="help" role="status" aria-live="polite">Loading reports…</p>
+      <p id="queue-error" class="notice warning" role="alert" hidden></p>
+      <div class="table-scroll" role="region" aria-label="Report queue. Scroll horizontally on small screens." tabindex="0">
+        <table><caption class="visually-hidden">Reports, newest first. Updates automatically.</caption><thead><tr><th scope="col">Report</th><th scope="col">Station / engineer</th><th scope="col">Status</th><th scope="col">Verdict</th><th scope="col">Brief by · UTC</th><th scope="col">Flags</th><th scope="col">Cost · USD</th></tr></thead><tbody id="queue-body"></tbody></table>
+      </div>
+      <div class="pagination"><span id="queue-range" class="help"></span><div class="pagination-actions"><button id="previous-page" type="button" disabled>Previous</button><button id="next-page" type="button" disabled>Next</button></div></div>
+    </section>
+  </main>
+  <footer>Mission Control <span>Meridian Launch Services</span></footer>
+</body>
+</html>

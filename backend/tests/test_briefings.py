@@ -43,6 +43,7 @@ def test_feedback_drives_bounded_revisions_and_first_pass_stops(tmp_path, payloa
     assert len(drafts) == len(evaluations) == len(reviews)
     assert drafts[0].payload["revision_feedback"] is None
     for index, request in enumerate(drafts):
+        assert request.payload["report"]["engineer_name"] == payload["engineer_name"]
         assert payload["note"] not in request.instructions
         assert request.payload["report"]["note"] == payload["note"]
         assert request.response_schema["additionalProperties"] is False
@@ -78,6 +79,109 @@ def test_three_rejections_preserve_every_draft_and_fail_without_a_fourth_call(tm
     assert all(v["evaluator_feedback"]["feedback"] for v in detail["briefing_versions"])
     assert [r.operation for r in fake.calls][-6:] == ["draft", "evaluation"] * 3
     assert detail["approvals"] == [] and detail["verdict"] == "no_go"
+
+
+@pytest.mark.parametrize("words", [80, 81])
+def test_summary_length_is_enforced_even_when_the_reviewer_passes(tmp_path, payload, words):
+    class VerboseClient(ReviewClient):
+        def briefing_response(self, request):
+            if request.operation == "draft":
+                return self.response(
+                    json.dumps(
+                        {
+                            "summary": " ".join(["Observation"] * words),
+                            "facts": request.payload["canonical_facts"],
+                        }
+                    )
+                )
+            return super().briefing_response(request)
+
+    detail = submit(tmp_path, payload, VerboseClient((True,) * 3))
+    if words == 80:
+        assert detail["status"] == "pending_review"
+        assert len(detail["briefing_versions"]) == 1
+    else:
+        assert detail["current_run"]["failure_reason"] == "quality_review_exhausted"
+        assert len(detail["briefing_versions"]) == 3
+        assert all(not version["quality_passed"] for version in detail["briefing_versions"])
+        assert detail["latest_briefing"]["evaluator_feedback"]["readability_issues"]
+    assert detail["verdict"] == "no_go" and detail["approvals"] == []
+
+
+def test_length_feedback_drives_a_concise_second_draft(tmp_path, payload):
+    class RevisingClient(ReviewClient):
+        def briefing_response(self, request):
+            if request.operation == "draft" and request.payload["round_number"] == 1:
+                return self.response(
+                    json.dumps(
+                        {
+                            "summary": "Observation " * 81,
+                            "facts": request.payload["canonical_facts"],
+                        }
+                    )
+                )
+            return super().briefing_response(request)
+
+    fake = RevisingClient((True, True))
+    detail = submit(tmp_path, payload, fake)
+    drafts = [call for call in fake.calls if call.operation == "draft"]
+    assert drafts[1].payload["revision_feedback"]["readability_issues"]
+    assert [version["quality_passed"] for version in detail["briefing_versions"]] == [False, True]
+    assert detail["status"] == "pending_review"
+    for call in fake.calls:
+        if call.operation in {"injection", "missing_details", "panic"}:
+            assert call.payload["engineer_name"] == payload["engineer_name"]
+
+
+@pytest.mark.parametrize(
+    "bad_summary",
+    [
+        "The canonical verdict is NO-GO. Follow up with the engineer.",
+        "Wind 26 knots, temperature 4 C, fuel 98 percent. Follow up with the engineer.",
+        "Wind needs a sensor cross-check. Wind needs a sensor cross-check.",
+        "The free-text note field is unclear. Ask the engineer what happened.",
+    ],
+)
+def test_padding_is_revised_even_below_word_limit_and_with_a_positive_review(
+    tmp_path, payload, bad_summary
+):
+    class PaddingClient(ReviewClient):
+        def briefing_response(self, request):
+            if request.operation == "draft" and request.payload["round_number"] == 1:
+                return self.response(
+                    json.dumps(
+                        {"summary": bad_summary, "facts": request.payload["canonical_facts"]}
+                    )
+                )
+            return super().briefing_response(request)
+
+    fake = PaddingClient((True, True))
+    detail = submit(tmp_path, payload, fake)
+    assert len(bad_summary.split()) < 80
+    assert [version["quality_passed"] for version in detail["briefing_versions"]] == [False, True]
+    drafts = [call for call in fake.calls if call.operation == "draft"]
+    assert drafts[1].payload["revision_feedback"]["readability_issues"]
+    assert detail["status"] == "pending_review" and detail["verdict"] == "no_go"
+
+
+def test_repeated_boilerplate_cannot_pass_by_exhausting_the_three_rounds(tmp_path, payload):
+    class PaddingClient(ReviewClient):
+        def briefing_response(self, request):
+            if request.operation == "draft":
+                return self.response(
+                    json.dumps(
+                        {
+                            "summary": "The canonical verdict is NO-GO. Ask for missing context.",
+                            "facts": request.payload["canonical_facts"],
+                        }
+                    )
+                )
+            return super().briefing_response(request)
+
+    detail = submit(tmp_path, payload, PaddingClient((True,) * 3))
+    assert detail["current_run"]["failure_reason"] == "quality_review_exhausted"
+    assert len(detail["briefing_versions"]) == 3
+    assert detail["approvals"] == []
 
 
 @pytest.mark.parametrize(

@@ -229,3 +229,4 @@ data/
 *.sqlite*
 .env.*
 !.env.example
+compose.override.yaml

@@ -1,6 +1,8 @@
 """Integration-only pipeline: hold processing open until the test kills this process."""
 
 import asyncio
+import os
+from pathlib import Path
 
 from app.db.models import CheckResult, TraceStep
 from app.llm.client import ModelResponse, TokenUsage
@@ -77,3 +79,18 @@ class BlockedReviewClient(ReviewClient):
 
 
 review_app = create_app(model_client=BlockedReviewClient())
+
+
+class ReleasableModelClient(ReviewClient):
+    """A test-owned file gates classification; no control endpoint ships in the app."""
+
+    async def generate(self, request):
+        if request.operation == "classification":
+            release = Path(os.environ["MISSION_CONTROL_TEST_RELEASE_PATH"])
+            release.with_suffix(".entered").touch()
+            while not release.exists():
+                await asyncio.sleep(0.01)
+        return await super().generate(request)
+
+
+released_app = create_app(model_client=ReleasableModelClient())
