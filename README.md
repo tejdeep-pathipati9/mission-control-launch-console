@@ -17,18 +17,18 @@ docker compose up --build
 
 Open [Mission Control](http://localhost:8000/) to submit an anomaly report. The form accepts
 readings outside launch limits and shows field errors. After submission it navigates to
-`/reports/{id}`, a separate page showing the original readings/note, verdict, violations, deadline,
-findings, and latest briefing. This page can be reopened directly or refreshed without resubmitting.
+`/reports/{id}`, a separate review page showing the original readings/note, verdict, violations,
+deadline, findings, latest briefing, approval controls, costs, and trace cards. This page can be reopened directly or refreshed without resubmitting.
 It polls every two seconds while processing and stops at a terminal state. If polling fails,
 **Retry status** fetches the saved report without another submission. **New report** links back
 to the input page. Existing `/?report={id}` bookmarks redirect to the new report page.
 
-Open [Reports](http://localhost:8000/reports) to review the paginated report queue.
-`/reports` is a page; old `/director` links redirect here and preserve the selected report.
-Select a report to inspect its original input, findings, briefing history,
-approval history, and a trace card for each processing step. Costs distinguish complete totals
-from known subtotals when usage or prices are unavailable. The queue refreshes every five seconds;
-selected processing reports poll every two seconds. `/reports?report={id}` opens a specific report for review.
+Open [Reports](http://localhost:8000/reports) for the paginated queue. Clicking a report opens
+its dedicated `/reports/{id}` review page; details never expand beneath the queue. **All reports**
+returns to the list, and browser Back/Forward work normally. The queue refreshes every five seconds;
+a processing report polls every two seconds. Old `/director?report={id}` and `/reports?report={id}`
+bookmarks redirect to the dedicated page. Costs distinguish complete totals from partial or
+unavailable amounts. Approval access appears on the review page when a briefing is pending.
 
 For approval, configure `DEMO_DIRECTOR_TOKEN` in your ignored runtime configuration, then enter it
 in the collapsed **Approval access** panel and choose **Sign in**. This approval access key is
@@ -67,6 +67,13 @@ The first passing draft moves the report to `pending_review`, with no approval r
 failures produce `quality_review_exhausted`; model-call failures produce `draft_failed` or
 `evaluation_failed`. Required-check errors prevent drafting. Neither a model check nor a flagged
 finding authorizes launch.
+
+The writer and reviewer are **two model roles with separate API calls**, using the same configured
+Foundry model. They use distinct instructions and structured schemas; the reviewer receives the
+proposed draft, original report, checks, and canonical facts. Rejected feedback goes into the next
+writer call, with at most three writer/reviewer pairs. Two different models or an autonomous-agent
+framework are not required by the assignment. Neither role can approve a briefing.
+
 Malformed hidden-instruction replies become visible `flagged` results with `review_required: true`
 and an `error_reason`. They are unresolved checks: their traces fail, drafting stops, and flag
 acknowledgement cannot make them approvable. Successfully evaluated flags remain reviewable under
@@ -78,6 +85,10 @@ On startup, unfinished processing runs become `failed` / `interrupted` and retai
 Do not use `docker compose down --volumes` unless you intend to delete the database.
 Keep one app container/worker while this recovery strategy is in use.
 
+Older saved reports retain their original failure messages and traces, including reports created
+before model processing was implemented. Opening a report does not rerun its pipeline. Submit a
+new report to exercise the current pipeline; historical failed reports remain unapprovable.
+
 ## Test
 
 From the repository root:
@@ -86,7 +97,7 @@ From the repository root:
 docker compose --profile test run --build --rm --no-deps tests
 ```
 
-The test command runs 53 JavaScript workflow checks in a build stage with networking disabled,
+The test command runs 51 JavaScript workflow checks in a build stage with networking disabled,
 then the Python tests in a network-disabled container. JavaScript checks use Node's built-in test
 runner and an in-memory DOM fixture, with no npm packages. Node is test-only: the runtime app
 serves unchanged HTML/CSS/JS files and needs no frontend build step. UI checks can use Docker's
@@ -97,7 +108,7 @@ mounts the application data volume. Image builds may download dependencies; the 
 does not need internet access. Tests also block external sockets; the real-HTTP integration
 test permits loopback only to launch and crash its own local server.
 
-**Verification (November 17, 2026):** 428 Python tests and 53 JavaScript workflow checks passed
+**Verification (November 17, 2026):** 428 Python tests and 51 JavaScript workflow checks passed
 locally and through the Docker test command; lint and formatting passed. The credential hook's 11 synthetic tests also passed.
 Coverage includes three-round revision/feedback handling, early stopping, canonical-fact rejection,
 model failures and missing usage, partial polling, and recovery after a real HTTP process crash
@@ -115,7 +126,7 @@ rendering untrusted model text as text. Real-HTTP director tests approve flagged
 briefings, reject unauthorized and incomplete approvals, and retain the audit after restart.
 An isolated production-image Compose smoke test reached healthy status and served `/`,
 `/reports`, report-link URLs, CSS/JS, API health, and `/docs` with HTTP 200. Old `/director` links
-return a 307 redirect that preserves the report selection. Clean runtime/test image builds passed.
+return a 307 redirect to the dedicated report page when an ID is supplied. Clean runtime/test image builds passed.
 The production container retained the complete saved report after forced recreation. A separate
 fake-model container was killed during evaluation; the production image recovered its database as
 `failed` / `interrupted`, retaining the verdict, findings, draft, completed traces, and known costs.
@@ -123,8 +134,9 @@ A coordinated HTTP test now also holds classification open until after `202` is 
 releases it and verifies completion at `pending_review` without model approval.
 
 A separate headless Chromium walkthrough submitted wind readings of 25 and 25.01 knots, reviewed
-the generated briefings, signed in, acknowledged the injection flag, and explicitly approved both.
-The verdicts stayed GO and NO-GO. Form, queue, report, and selected-review layouts passed at
+the generated briefings, navigated from the queue to a new review document, signed in,
+acknowledged the injection flag, and explicitly approved both. Back/Forward and legacy links passed.
+The verdicts stayed GO and NO-GO. Form, queue, and dedicated-review layouts passed at
 320, 390, 768, and 1440 pixels; desktop/mobile screenshots were inspected. No JavaScript errors
 were observed. Browser tooling was temporary and adds no application dependencies or build step.
 These checks used synthetic models and isolated databases, not live Foundry calls.
@@ -132,7 +144,7 @@ These checks used synthetic models and isolated databases, not live Foundry call
 Final test output:
 
 ```text
-JavaScript: tests 53, pass 53, fail 0
+JavaScript: tests 51, pass 51, fail 0
 Python: 428 passed
 Compose app: Healthy; records unchanged after container recreation
 ```
@@ -145,9 +157,9 @@ Final delivery and browser workflow verification are complete; live model qualit
 | Method | Path | Behavior |
 | --- | --- | --- |
 | `GET` | `/` | Engineer submission form; old `?report={id}` links redirect |
-| `GET` | `/reports/{id}` | Separate saved-report page with processing status and briefing |
-| `GET` | `/reports` | Report queue, selected details, traces, costs, and human approval |
-| `GET` | `/director` | Legacy redirect to `/reports`, preserving a valid selected report |
+| `GET` | `/reports/{id}` | Dedicated review page: briefing, findings, approval, costs, traces, and saved input |
+| `GET` | `/reports` | Report queue; links open dedicated review pages |
+| `GET` | `/director` | Legacy redirect to the queue or `/reports/{id}` when a valid ID is supplied |
 | `GET` | `/assets/*` | Local CSS/JavaScript files |
 | `POST` | `/api/reports` | Validate, persist the decision, schedule processing; return `202` |
 | `GET` | `/api/reports` | Newest-first summaries, `limit` (1–100) and `offset` pagination |
